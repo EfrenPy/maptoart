@@ -46,6 +46,16 @@ THEMES_DIR = "themes"
 FONTS_DIR = "fonts"
 POSTERS_DIR = "posters"
 
+# Paper sizes in inches (width x height for portrait orientation)
+# ISO A-series standard dimensions
+PAPER_SIZES = {
+    "A0": (33.1, 46.8),
+    "A1": (23.4, 33.1),
+    "A2": (16.5, 23.4),
+    "A3": (11.7, 16.5),
+    "A4": (8.3, 11.7),
+}
+
 FONTS = load_fonts()
 
 
@@ -487,11 +497,13 @@ def create_poster(
     output_format,
     width=12,
     height=16,
+    dpi=300,
     country_label=None,
     name_label=None,
     display_city=None,
     display_country=None,
     fonts=None,
+    show_attribution=True,
 ):
     """
     Generate a complete map poster with roads, water, parks, and typography.
@@ -733,23 +745,24 @@ def create_poster(
     )
 
     # --- ATTRIBUTION (bottom right) ---
-    if FONTS:
-        font_attr = FontProperties(fname=FONTS["light"], size=8)
-    else:
-        font_attr = FontProperties(family="monospace", size=8)
+    if show_attribution:
+        if FONTS:
+            font_attr = FontProperties(fname=FONTS["light"], size=8)
+        else:
+            font_attr = FontProperties(family="monospace", size=8)
 
-    ax.text(
-        0.98,
-        0.02,
-        "© OpenStreetMap contributors",
-        transform=ax.transAxes,
-        color=THEME["text"],
-        alpha=0.5,
-        ha="right",
-        va="bottom",
-        fontproperties=font_attr,
-        zorder=11,
-    )
+        ax.text(
+            0.98,
+            0.02,
+            "© OpenStreetMap contributors",
+            transform=ax.transAxes,
+            color=THEME["text"],
+            alpha=0.5,
+            ha="right",
+            va="bottom",
+            fontproperties=font_attr,
+            zorder=11,
+        )
 
     # 5. Save
     print(f"Saving to {output_file}...")
@@ -761,9 +774,23 @@ def create_poster(
         pad_inches=0.05,
     )
 
-    # DPI matters mainly for raster formats
     if fmt == "png":
-        save_kwargs["dpi"] = 300
+        save_kwargs["dpi"] = dpi
+        output_width_px = int(width * dpi)
+        output_height_px = int(height * dpi)
+        print(f"  Output resolution: {output_width_px} x {output_height_px} px ({dpi} DPI)")
+    else:
+        # Vector formats (PDF, SVG) are resolution-independent.
+        # DPI only affects rasterized elements (fills, gradients).
+        # Cap at 300 to avoid excessive memory usage.
+        MAX_VECTOR_DPI = 300
+        effective_dpi = min(dpi, MAX_VECTOR_DPI)
+        save_kwargs["dpi"] = effective_dpi
+        if dpi > MAX_VECTOR_DPI:
+            print(
+                f"  Using {effective_dpi} DPI for {fmt.upper()} (vector format is resolution-independent, "
+                f"high DPI not needed)"
+            )
 
     plt.savefig(output_file, format=fmt, **save_kwargs)
 
@@ -954,6 +981,33 @@ Examples:
         choices=["png", "svg", "pdf"],
         help="Output format for the poster (default: png)",
     )
+    parser.add_argument(
+        "--no-attribution",
+        dest="no_attribution",
+        action="store_true",
+        help="Hide the OpenStreetMap attribution text",
+    )
+    parser.add_argument(
+        "--paper-size",
+        "-p",
+        type=str,
+        choices=["A0", "A1", "A2", "A3", "A4"],
+        help="Paper size preset (overrides --width and --height)",
+    )
+    parser.add_argument(
+        "--orientation",
+        "-o",
+        type=str,
+        choices=["portrait", "landscape"],
+        default="portrait",
+        help="Paper orientation (default: portrait)",
+    )
+    parser.add_argument(
+        "--dpi",
+        type=int,
+        default=300,
+        help="Output DPI (default: 300). Affects PNG resolution directly; capped at 300 for vector formats (PDF, SVG)",
+    )
 
     args = parser.parse_args()
 
@@ -973,17 +1027,41 @@ Examples:
         print_examples()
         sys.exit(1)
 
+    # Process paper size preset (overrides width/height)
+    MAX_DIMENSION_CUSTOM = 20.0  # For manual --width/--height
+    MAX_DIMENSION_PAPER = 50.0  # For paper size presets (A0 is 46.8")
+
+    if args.paper_size:
+        base_width, base_height = PAPER_SIZES[args.paper_size]
+        if args.orientation == "landscape":
+            args.width, args.height = base_height, base_width
+        else:
+            args.width, args.height = base_width, base_height
+        print(
+            f"✓ Using {args.paper_size} ({args.orientation}): {args.width}\" x {args.height}\""
+        )
+        max_dim = MAX_DIMENSION_PAPER
+    else:
+        max_dim = MAX_DIMENSION_CUSTOM
+
     # Enforce maximum dimensions
-    if args.width > 20:
+    if args.width > max_dim:
         print(
-            f"⚠ Width {args.width} exceeds the maximum allowed limit of 20. It's enforced as max limit 20."
+            f"⚠ Width {args.width} exceeds the maximum allowed limit of {max_dim}. Enforcing max limit."
         )
-        args.width = 20.0
-    if args.height > 20:
+        args.width = max_dim
+    if args.height > max_dim:
         print(
-            f"⚠ Height {args.height} exceeds the maximum allowed limit of 20. It's enforced as max limit 20."
+            f"⚠ Height {args.height} exceeds the maximum allowed limit of {max_dim}. Enforcing max limit."
         )
-        args.height = 20.0
+        args.height = max_dim
+
+    # Validate DPI
+    if args.dpi < 72:
+        print(f"⚠ DPI {args.dpi} is too low. Setting to minimum 72.")
+        args.dpi = 72
+    elif args.dpi > 2400:
+        print(f"⚠ DPI {args.dpi} is very high. This may cause memory issues.")
 
     available_themes = get_available_themes()
     if not available_themes:
@@ -1032,10 +1110,12 @@ Examples:
                 args.format,
                 args.width,
                 args.height,
+                dpi=args.dpi,
                 country_label=args.country_label,
                 display_city=args.display_city,
                 display_country=args.display_country,
                 fonts=custom_fonts,
+                show_attribution=not args.no_attribution,
             )
 
         print("\n" + "=" * 50)

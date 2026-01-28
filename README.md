@@ -78,6 +78,11 @@ python create_map_poster.py --city <city> --country <country> [options]
 | **OPTIONAL:** `--all-themes` | | Generate posters for all available themes | |
 | **OPTIONAL:** `--width` | `-W` | Image width in inches | 12 (max: 20) |
 | **OPTIONAL:** `--height` | `-H` | Image height in inches | 16 (max: 20) |
+| **OPTIONAL:** `--paper-size` | `-p` | Paper size preset: A0, A1, A2, A3, A4 (overrides width/height) | |
+| **OPTIONAL:** `--orientation` | `-o` | Paper orientation: portrait, landscape | portrait |
+| **OPTIONAL:** `--dpi` | | Output DPI (affects PNG directly; capped at 300 for PDF/SVG) | 300 |
+| **OPTIONAL:** `--no-attribution` | | Hide the OpenStreetMap attribution text | |
+| **OPTIONAL:** `--format` | `-f` | Output format: png, svg, pdf | png |
 
 ### Multilingual Support - i18n
 
@@ -104,7 +109,47 @@ python create_map_poster.py -c "Dubai" -C "UAE" -dc "دبي" -dC "الإمارا
 
 **Note**: Fonts are automatically downloaded from Google Fonts and cached locally in `fonts/cache/`.
 
-### Resolution Guide (300 DPI)
+### Paper Size Presets
+
+Use `--paper-size` (`-p`) for standard print-ready sizes. Combine with `--orientation` (`-o`) for landscape.
+
+| Size | Portrait (inches) | Landscape (inches) | Pixels @ 300 DPI | Pixels @ 600 DPI |
+|------|-------------------|--------------------|--------------------|-------------------|
+| **A0** | 33.1 x 46.8 | 46.8 x 33.1 | 9,930 x 14,040 | 19,860 x 28,080 |
+| **A1** | 23.4 x 33.1 | 33.1 x 23.4 | 7,020 x 9,930 | 14,040 x 19,860 |
+| **A2** | 16.5 x 23.4 | 23.4 x 16.5 | 4,950 x 7,020 | 9,900 x 14,040 |
+| **A3** | 11.7 x 16.5 | 16.5 x 11.7 | 3,510 x 4,950 | 7,020 x 9,900 |
+| **A4** | 8.3 x 11.7 | 11.7 x 8.3 | 2,490 x 3,510 | 4,980 x 7,020 |
+
+```bash
+# A2 portrait poster
+python create_map_poster.py -c "Paris" -C "France" -p A2
+
+# A3 landscape poster
+python create_map_poster.py -c "Tokyo" -C "Japan" -p A3 -o landscape
+
+# High-resolution A2 at 600 DPI
+python create_map_poster.py -c "London" -C "UK" -p A2 --dpi 600
+
+# A4 PDF for print shop
+python create_map_poster.py -c "Berlin" -C "Germany" -p A4 -f pdf
+
+# A0 large format poster
+python create_map_poster.py -c "New York" -C "USA" -p A0 --dpi 300
+```
+
+### DPI Guide
+
+| DPI | Quality | Best for |
+|-----|---------|----------|
+| 150 | Draft | Quick previews |
+| 300 | Standard | Standard print quality |
+| 600 | High | Professional prints |
+| 1200 | Very high | Large format / archival |
+
+> **Note:** Higher DPI increases memory usage and generation time significantly, especially for large paper sizes (A0, A1). For vector formats (PDF, SVG), DPI is capped at 300 since they are resolution-independent and scale perfectly at any size.
+
+### Resolution Guide (custom sizes at 300 DPI)
 
 Use these values for `-W` and `-H` to target specific resolutions:
 
@@ -114,7 +159,6 @@ Use these values for `-W` and `-H` to target specific resolutions:
 | **Mobile Wallpaper** | 1080 x 1920 | 3.6 x 6.4 |
 | **HD Wallpaper** | 1920 x 1080 | 6.4 x 3.6 |
 | **4K Wallpaper** | 3840 x 2160 | 12.8 x 7.2 |
-| **A4 Print** | 2480 x 3508 | 8.3 x 11.7 |
 
 ### Examples
 
@@ -379,4 +423,4 @@ G = ox.graph_from_point(point, dist=dist, network_type='walk')   # pedestrian
 - Large `dist` values (>20km) = slow downloads + memory heavy
 - Cache coordinates locally to avoid Nominatim rate limits
 - Use `network_type='drive'` instead of `'all'` for faster renders
-- Reduce `dpi` from 300 to 150 for quick previews
+- Use `--dpi 150` for quick previews, `--dpi 600` or higher for print quality
