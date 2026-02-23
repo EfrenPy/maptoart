@@ -22,6 +22,8 @@ Generate beautiful, minimalist map posters for any city in the world.
 
 ## Installation
 
+> Requires Python **3.11+** (matches the versions validated in CI).
+
 ### With uv (Recommended)
 
 Make sure [uv](https://docs.astral.sh/uv/) is installed. Running the script by prepending `uv run` automatically creates and manages a virtual environment.
@@ -43,6 +45,12 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+To regenerate `requirements.txt` from `pyproject.toml`, run `./scripts/sync_requirements.sh` (wraps `uv pip compile`).
+
+### Fonts Cache
+
+Custom Google Fonts requested via `--font-family` are cached under `fonts/cache/`. Pre-create this directory (it's gitignored) and drop any `.woff2`/`.ttf` assets there to avoid repeated downloads in CI or air-gapped environments.
+
 ## Usage
 
 ### Generate Poster
@@ -50,14 +58,65 @@ pip install -r requirements.txt
 If you're using `uv`:
 
 ```bash
-uv run ./create_map_poster.py --city <city> --country <country> [options]
+uv run maptoposter-cli --city <city> --country <country> [options]
 ```
 
 Otherwise (pip + venv):
 
 ```bash
-python create_map_poster.py --city <city> --country <country> [options]
+maptoposter-cli --city <city> --country <country> [options]
 ```
+
+> **Legacy compatibility:** `python create_map_poster.py ...` still works if you prefer calling the script directly.
+
+### Programmatic Usage
+
+Call the renderer from Python without the CLI:
+
+```python
+from maptoposter import PosterGenerationOptions, generate_posters
+
+options = PosterGenerationOptions(city="Paris", country="France", theme="terracotta")
+generate_posters(options)
+```
+
+This API is ideal for services (Node, workers, etc.) that want to orchestrate renders without shelling out to the CLI.
+
+## Testing
+
+Install the development extras, then run pytest:
+
+```bash
+uv pip install '.[dev]'  # once
+uv run pytest
+```
+
+These tests rely on lightweight fixtures that mock geocoding results and synthetic OSM data, so they run quickly without network access.
+
+### Config Files
+
+Pass a JSON or YAML file via `--config` to predefine CLI options (any CLI flag can be set with the same snake_case key). CLI flags always override the config file when both are provided.
+
+```yaml
+city: Paris
+country: France
+themes:
+  - terracotta
+  - neon_cyberpunk
+distance: 9000
+paper_size: A2
+orientation: landscape
+output_dir: /tmp/posters
+no_attribution: true
+```
+
+You can still combine individual flags, e.g. `maptoposter-cli --config poster.yaml --width 14 --log-format json`.
+
+### Structured Logging & Metadata
+
+- Use `--log-format json` to emit newline-delimited JSON events describing progress (`run.start`, `poster.save.complete`, etc.), perfect for machine parsing.
+- Every generated poster now produces a sibling metadata file (`<poster>.json`) containing city/country, theme, DPI, coordinates, timestamps, and attribution flags for audit/billing.
+- Direct poster output anywhere via `--output-dir` or the `MAPTOPOSTER_OUTPUT_DIR` environment variable (defaults to `posters/`).
 
 ### Required Options
 
@@ -271,11 +330,13 @@ python create_map_poster.py -c "Tokyo" -C "Japan" --all-themes
 
 ## Output
 
-Posters are saved to `posters/` directory with format:
+Posters are saved to `posters/` by default (`MAPTOPOSTER_OUTPUT_DIR` or `--output-dir` can override). Filenames follow:
 
 ```text
 {city}_{theme}_{YYYYMMDD_HHMMSS}.png
 ```
+
+Each poster is accompanied by `{city}_{theme}_{timestamp}.json`, a metadata file capturing coordinates, DPI, size, theme, attribution flags, and timestamps for downstream billing/auditing.
 
 ## Adding Custom Themes
 
@@ -303,8 +364,13 @@ Create a JSON file in `themes/` directory:
 
 ```text
 map_poster/
-├── create_map_poster.py    # Main script
-├── font_management.py      # Font loading and Google Fonts integration
+├── create_map_poster.py    # Legacy wrapper (calls maptoposter-cli)
+├── src/
+│   └── maptoposter/
+│       ├── __init__.py     # Public programmatic API
+│       ├── cli.py          # CLI entry point (maptoposter-cli)
+│       ├── core.py         # Rendering + data fetching helpers
+│       └── font_management.py  # Font loading and Google Fonts integration
 ├── themes/                 # Theme JSON files
 ├── fonts/                  # Font files
 │   ├── Roboto-*.ttf        # Default Roboto fonts
