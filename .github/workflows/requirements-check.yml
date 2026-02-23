@@ -16,9 +16,10 @@ jobs:
         run: |
           curl -Ls https://astral.sh/uv/install.sh | sh
 
+      - name: Add uv to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Ensure requirements.txt is in sync
-        env:
-          PATH: "$HOME/.local/bin:$PATH"
         run: |
           bash ./scripts/sync_requirements.sh
           git diff --exit-code requirements.txt
