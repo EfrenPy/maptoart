@@ -20,5 +20,5 @@ jobs:
         env:
           PATH: "$HOME/.local/bin:$PATH"
         run: |
-          ./scripts/sync_requirements.sh
+          bash ./scripts/sync_requirements.sh
           git diff --exit-code requirements.txt
