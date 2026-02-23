@@ -32,7 +32,9 @@ CACHE_DIR_PATH = os.environ.get("CACHE_DIR", "cache")
 CACHE_DIR = Path(CACHE_DIR_PATH)
 CACHE_DIR.mkdir(exist_ok=True)
 
-THEMES_DIR = "themes"
+PACKAGE_DIR = Path(__file__).resolve().parent
+DEFAULT_THEMES_DIR = PACKAGE_DIR / "themes"
+THEMES_DIR = Path(os.environ.get("MAPTOPOSTER_THEMES_DIR", str(DEFAULT_THEMES_DIR)))
 DEFAULT_POSTERS_DIR = "posters"
 OUTPUT_DIR_ENV = "MAPTOPOSTER_OUTPUT_DIR"
 
@@ -190,7 +192,7 @@ def _resolve_theme_names(options: PosterGenerationOptions, available: Sequence[s
     """Determine the list of themes to render for the current run."""
 
     if not available:
-        raise ValueError("No themes found in 'themes/' directory.")
+        raise ValueError(f"No themes found in '{THEMES_DIR}'.")
 
     if options.all_themes:
         return list(available)
@@ -361,20 +363,14 @@ def generate_output_filename(
     return str(Path(output_dir) / filename)
 
 
-def get_available_themes():
-    """
-    Scans the themes directory and returns a list of available theme names.
-    """
-    if not os.path.exists(THEMES_DIR):
-        os.makedirs(THEMES_DIR)
+def get_available_themes() -> list[str]:
+    """Return available theme names from the configured directory."""
+
+    if not THEMES_DIR.exists():
+        THEMES_DIR.mkdir(parents=True, exist_ok=True)
         return []
 
-    themes = []
-    for file in sorted(os.listdir(THEMES_DIR)):
-        if file.endswith(".json"):
-            theme_name = file[:-5]  # Remove .json extension
-            themes.append(theme_name)
-    return themes
+    return sorted(p.stem for p in THEMES_DIR.glob("*.json"))
 
 
 def load_theme(
@@ -384,9 +380,9 @@ def load_theme(
 ) -> dict[str, str]:
     """Load theme from JSON file in themes directory."""
 
-    theme_file = os.path.join(THEMES_DIR, f"{theme_name}.json")
+    theme_file = THEMES_DIR / f"{theme_name}.json"
 
-    if not os.path.exists(theme_file):
+    if not theme_file.exists():
         _emit_status(
             status_reporter,
             "theme.fallback",
@@ -409,7 +405,7 @@ def load_theme(
             "road_default": "#D9A08A",
         }
 
-    with open(theme_file, "r", encoding=FILE_ENCODING) as f:
+    with theme_file.open("r", encoding=FILE_ENCODING) as f:
         theme = json.load(f)
         description = theme.get("description")
         _emit_status(
@@ -1295,27 +1291,28 @@ Distance guide:
   8000-12000m  Medium cities, focused downtown (Paris, Barcelona)
   15000-20000m Large metros, full city view (Tokyo, Mumbai)
 
-Available themes can be found in the 'themes/' directory.
+Available themes ship with the package (override via MAPTOPOSTER_THEMES_DIR).
 Generated posters are saved to 'posters/' directory.
 """)
 
 
 def list_themes():
     """List all available themes with descriptions."""
+
     available_themes = get_available_themes()
     if not available_themes:
-        print("No themes found in 'themes/' directory.")
+        print(f"No themes found in '{THEMES_DIR}'.")
         return
 
     print("\nAvailable Themes:")
     print("-" * 60)
     for theme_name in available_themes:
-        theme_path = os.path.join(THEMES_DIR, f"{theme_name}.json")
+        theme_path = THEMES_DIR / f"{theme_name}.json"
         try:
-            with open(theme_path, "r", encoding=FILE_ENCODING) as f:
+            with theme_path.open("r", encoding=FILE_ENCODING) as f:
                 theme_data = json.load(f)
-                display_name = theme_data.get('name', theme_name)
-                description = theme_data.get('description', '')
+                display_name = theme_data.get("name", theme_name)
+                description = theme_data.get("description", "")
         except (OSError, json.JSONDecodeError):
             display_name = theme_name
             description = ""

@@ -1,0 +1,11 @@
+city: Paris
+country: France
+themes:
+  - terracotta
+  - neon_cyberpunk
+distance: 9000
+paper_size: A2
+orientation: landscape
+output_dir: ./posters
+no_attribution: false
+font_family: "Roboto"

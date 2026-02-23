@@ -29,7 +29,7 @@ def silent_reporter() -> core.StatusReporter:
 def sample_theme_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """Provide a temporary directory for theme JSON files."""
 
-    monkeypatch.setattr(core, "THEMES_DIR", str(tmp_path))
+    monkeypatch.setattr(core, "THEMES_DIR", tmp_path)
     yield tmp_path
 
 

@@ -1,0 +1,24 @@
+name: requirements-sync
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        run: |
+          curl -Ls https://astral.sh/uv/install.sh | sh
+
+      - name: Ensure requirements.txt is in sync
+        env:
+          PATH: "$HOME/.local/bin:$PATH"
+        run: |
+          ./scripts/sync_requirements.sh
+          git diff --exit-code requirements.txt

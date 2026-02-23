@@ -47,9 +47,26 @@ pip install -r requirements.txt
 
 To regenerate `requirements.txt` from `pyproject.toml`, run `./scripts/sync_requirements.sh` (wraps `uv pip compile`).
 
+### Install from Git or wheel
+
+When consuming this package from another repository, either install directly from Git:
+
+```bash
+pip install "git+https://github.com/EfrenPy/maptoposter.git@main"
+```
+
+or build a wheel once and install the artifact:
+
+```bash
+uv build
+pip install dist/maptoposter-*.whl
+```
+
+See `CONSUMERS.md` for end-to-end instructions (editable installs, tagged releases, and CI notes).
+
 ### Fonts Cache
 
-Custom Google Fonts requested via `--font-family` are cached under `fonts/cache/`. Pre-create this directory (it's gitignored) and drop any `.woff2`/`.ttf` assets there to avoid repeated downloads in CI or air-gapped environments.
+Custom Google Fonts requested via `--font-family` are cached under `~/.cache/maptoposter/fonts` by default (override with `MAPTOPOSTER_FONTS_CACHE`). Drop any `.woff2`/`.ttf` assets there to avoid repeated downloads in CI or air-gapped environments.
 
 ## Usage
 
@@ -82,6 +99,8 @@ generate_posters(options)
 
 This API is ideal for services (Node, workers, etc.) that want to orchestrate renders without shelling out to the CLI.
 
+> See `examples/basic_python_usage.py` for a ready-to-run snippet that writes posters into `examples/output/` and logs JSON progress.
+
 ## Testing
 
 Install the development extras, then run pytest:
@@ -110,7 +129,7 @@ output_dir: /tmp/posters
 no_attribution: true
 ```
 
-You can still combine individual flags, e.g. `maptoposter-cli --config poster.yaml --width 14 --log-format json`.
+You can still combine individual flags, e.g. `maptoposter-cli --config poster.yaml --width 14 --log-format json`. A starter config lives in `examples/config/poster.yaml` and mirrors every CLI option.
 
 ### Structured Logging & Metadata
 
@@ -317,7 +336,7 @@ python create_map_poster.py -c "Tokyo" -C "Japan" --all-themes
 
 ## Themes
 
-17 themes available in `themes/` directory:
+17 themes ship with the package (override via `MAPTOPOSTER_THEMES_DIR`):
 
 | Theme | Style |
 |-------|-------|
@@ -381,11 +400,9 @@ map_poster/
 │       ├── __init__.py     # Public programmatic API
 │       ├── cli.py          # CLI entry point (maptoposter-cli)
 │       ├── core.py         # Rendering + data fetching helpers
-│       └── font_management.py  # Font loading and Google Fonts integration
-├── themes/                 # Theme JSON files
-├── fonts/                  # Font files
-│   ├── Roboto-*.ttf        # Default Roboto fonts
-│   └── cache/              # Downloaded Google Fonts (auto-generated)
+│       ├── font_management.py  # Font loading and Google Fonts integration
+│       ├── themes/         # Packaged themes (override via MAPTOPOSTER_THEMES_DIR)
+│       └── fonts/          # Bundled Roboto fonts
 ├── posters/                # Generated posters
 └── README.md
 ```

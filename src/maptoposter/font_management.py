@@ -10,8 +10,12 @@ from typing import Optional
 
 import requests
 
-FONTS_DIR = "fonts"
-FONTS_CACHE_DIR = Path(FONTS_DIR) / "cache"
+PACKAGE_DIR = Path(__file__).resolve().parent
+DEFAULT_FONTS_DIR = PACKAGE_DIR / "fonts"
+DEFAULT_CACHE_DIR = Path(os.environ.get("MAPTOPOSTER_FONTS_CACHE", Path.home() / ".cache" / "maptoposter" / "fonts"))
+
+FONTS_DIR = Path(os.environ.get("MAPTOPOSTER_FONTS_DIR", str(DEFAULT_FONTS_DIR)))
+FONTS_CACHE_DIR = DEFAULT_CACHE_DIR
 
 
 def download_google_font(font_family: str, weights: list = None) -> Optional[dict]:
@@ -156,9 +160,9 @@ def load_fonts(font_family: Optional[str] = None) -> Optional[dict]:
 
     # Default: Load local Roboto fonts
     fonts = {
-        "bold": os.path.join(FONTS_DIR, "Roboto-Bold.ttf"),
-        "regular": os.path.join(FONTS_DIR, "Roboto-Regular.ttf"),
-        "light": os.path.join(FONTS_DIR, "Roboto-Light.ttf"),
+        "bold": str(FONTS_DIR / "Roboto-Bold.ttf"),
+        "regular": str(FONTS_DIR / "Roboto-Regular.ttf"),
+        "light": str(FONTS_DIR / "Roboto-Light.ttf"),
     }
 
     # Verify fonts exist
