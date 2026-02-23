@@ -118,6 +118,17 @@ You can still combine individual flags, e.g. `maptoposter-cli --config poster.ya
 - Every generated poster now produces a sibling metadata file (`<poster>.json`) containing city/country, theme, DPI, coordinates, timestamps, and attribution flags for audit/billing.
 - Direct poster output anywhere via `--output-dir` or the `MAPTOPOSTER_OUTPUT_DIR` environment variable (defaults to `posters/`).
 
+### Consuming from Other Projects
+
+Until we publish a wheel, install the repository directly into neighboring projects (e.g., `maptoposterpage`) using editable mode:
+
+```bash
+cd /path/to/maptoposterpage
+pip install -e ../maptoposter
+```
+
+Editable installs let downstream apps pick up changes instantly. For immutable builds, run `uv build` or `pip install .` to produce/install a wheel before distributing it.
+
 ### Required Options
 
 | Option | Short | Description |
