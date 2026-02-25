@@ -1,6 +1,6 @@
 [project]
 name = "maptoposter"
-version = "0.2.0"
+version = "0.3.0"
 description = "Generate beautiful, minimalist map posters for any city in the world."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,6 +9,17 @@ authors = [
     {name = "Ankur Gupta", email = "originalankur@github.com"}
 ]
 keywords = ["map", "poster", "osm", "openstreetmap", "art", "visualization"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Graphics",
+    "Typing :: Typed",
+]
 
 dependencies = [
     "certifi==2026.1.4",
@@ -47,8 +58,20 @@ dependencies = [
 [project.scripts]
 maptoposter-cli = "maptoposter.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/originalankur/maptoposter"
+Source = "https://github.com/originalankur/maptoposter"
+"Bug Tracker" = "https://github.com/originalankur/maptoposter/issues"
+Changelog = "https://github.com/originalankur/maptoposter/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
-dev = ["pytest>=8.3.0", "pytest-mock>=3.12.0"]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-mock>=3.12.0",
+    "pytest-cov>=4.1.0",
+    "types-requests>=2.31.0",
+    "types-PyYAML>=6.0.0",
+]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
@@ -62,4 +85,15 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-maptoposter = ["themes/*.json", "fonts/*.ttf"]
+maptoposter = ["themes/*.json", "fonts/*.ttf", "py.typed"]
+
+[tool.pytest.ini_options]
+addopts = "--cov=maptoposter --cov-report=term-missing --cov-fail-under=85"
+testpaths = ["tests"]
+markers = ["integration: end-to-end tests with real rendering"]
+
+[tool.mypy]
+ignore_missing_imports = true
+no_strict_optional = true
+warn_unused_configs = true
+warn_redundant_casts = true

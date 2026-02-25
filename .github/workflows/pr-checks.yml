@@ -6,7 +6,7 @@ on:
     types: [opened, synchronize, reopened]
 
 env:
-  MAX_LINE_LENGTH: 160
+  MAX_LINE_LENGTH: 120
 
 jobs:
   lint-and-validate:
@@ -32,17 +32,20 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install '.[dev]'
           pip install flake8 pylint mypy
 
       - name: Validate Python syntax
         run: python -m compileall . -q
 
       - name: Test CLI help
-        run: python create_map_poster.py --help
+        run: maptoposter-cli --help
 
       - name: Test list themes
-        run: python create_map_poster.py --list-themes
+        run: maptoposter-cli --list-themes
+
+      - name: Run tests
+        run: pytest --cov=maptoposter --cov-report=term-missing --cov-fail-under=85
 
       - name: Lint with flake8
         run: |

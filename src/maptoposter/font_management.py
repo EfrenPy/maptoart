@@ -3,12 +3,15 @@ Font Management Module
 Handles font loading, Google Fonts integration, and caching.
 """
 
+import logging
 import os
 import re
+import time
 from pathlib import Path
-from typing import Optional
 
 import requests
+
+_logger = logging.getLogger(__name__)
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_FONTS_DIR = PACKAGE_DIR / "fonts"
@@ -18,7 +21,7 @@ FONTS_DIR = Path(os.environ.get("MAPTOPOSTER_FONTS_DIR", str(DEFAULT_FONTS_DIR))
 FONTS_CACHE_DIR = DEFAULT_CACHE_DIR
 
 
-def download_google_font(font_family: str, weights: list = None) -> Optional[dict]:
+def download_google_font(font_family: str, weights: list[int] | None = None) -> dict[str, str] | None:
     """
     Download a font family from Google Fonts and cache it locally.
     Returns dict with font paths for different weights, or None if download fails.
@@ -91,8 +94,9 @@ def download_google_font(font_family: str, weights: list = None) -> Optional[dic
                     weight_url_map.keys(), key=lambda x: abs(x - weight)
                 )
                 weight_url = weight_url_map[closest_weight]
-                print(
-                    f"  Using weight {closest_weight} for {weight_key} (requested {weight} not available)"
+                _logger.info(
+                    "Using weight %d for %s (requested %d not available)",
+                    closest_weight, weight_key, weight,
                 )
 
             if weight_url:
@@ -104,16 +108,38 @@ def download_google_font(font_family: str, weights: list = None) -> Optional[dic
                 font_path = FONTS_CACHE_DIR / font_filename
 
                 if not font_path.exists():
-                    print(f"  Downloading {font_family} {weight_key} ({weight})...")
-                    try:
-                        font_response = requests.get(weight_url, timeout=10)
-                        font_response.raise_for_status()
-                        font_path.write_bytes(font_response.content)
-                    except Exception as e:
-                        print(f"  ⚠ Failed to download {weight_key}: {e}")
+                    _logger.info("Downloading %s %s (%d)...", font_family, weight_key, weight)
+                    _max_retries = 2
+                    _retryable_status = {429, 500, 502, 503}
+                    downloaded = False
+                    for attempt in range(_max_retries + 1):
+                        try:
+                            font_response = requests.get(weight_url, timeout=10)
+                            font_response.raise_for_status()
+                            font_path.write_bytes(font_response.content)
+                            downloaded = True
+                            break
+                        except (requests.ConnectionError, requests.Timeout) as e:
+                            if attempt == _max_retries:
+                                _logger.warning(
+                                    "Failed to download %s after %d retries: %s",
+                                    weight_key, _max_retries, e,
+                                )
+                            else:
+                                time.sleep(1)
+                        except requests.HTTPError as e:
+                            if font_response.status_code in _retryable_status and attempt < _max_retries:
+                                time.sleep(1)
+                                continue
+                            _logger.warning("Failed to download %s: %s", weight_key, e)
+                            break
+                        except Exception as e:
+                            _logger.warning("Failed to download %s: %s", weight_key, e)
+                            break
+                    if not downloaded:
                         continue
                 else:
-                    print(f"  Using cached {font_family} {weight_key}")
+                    _logger.debug("Using cached %s %s", font_family, weight_key)
 
                 font_files[weight_key] = str(font_path)
 
@@ -121,24 +147,42 @@ def download_google_font(font_family: str, weights: list = None) -> Optional[dic
         if "regular" not in font_files and font_files:
             # Use first available as regular
             font_files["regular"] = list(font_files.values())[0]
-            print(f"  Using {list(font_files.keys())[0]} weight as regular")
+            _logger.info("Using %s weight as regular", list(font_files.keys())[0])
 
         # If we don't have all three weights, duplicate available ones
         if "bold" not in font_files and "regular" in font_files:
             font_files["bold"] = font_files["regular"]
-            print("  Using regular weight as bold")
+            _logger.debug("Using regular weight as bold")
         if "light" not in font_files and "regular" in font_files:
             font_files["light"] = font_files["regular"]
-            print("  Using regular weight as light")
+            _logger.debug("Using regular weight as light")
 
         return font_files if font_files else None
 
+    except requests.ConnectionError as e:
+        _logger.warning(
+            "Network error downloading Google Font '%s': %s. Check your internet connection.",
+            font_family, e,
+        )
+        return None
+    except requests.Timeout as e:
+        _logger.warning(
+            "Timeout downloading Google Font '%s': %s. Check your internet connection.",
+            font_family, e,
+        )
+        return None
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 404:
+            _logger.warning("Font family '%s' not found on Google Fonts.", font_family)
+        else:
+            _logger.warning("Error downloading Google Font '%s': %s", font_family, e)
+        return None
     except Exception as e:
-        print(f"⚠ Error downloading Google Font '{font_family}': {e}")
+        _logger.warning("Error downloading Google Font '%s': %s", font_family, e)
         return None
 
 
-def load_fonts(font_family: Optional[str] = None) -> Optional[dict]:
+def load_fonts(font_family: str | None = None) -> dict[str, str] | None:
     """
     Load fonts from local directory or download from Google Fonts.
     Returns dict with font paths for different weights.
@@ -150,13 +194,13 @@ def load_fonts(font_family: Optional[str] = None) -> Optional[dict]:
     """
     # If custom font family specified, try to download from Google Fonts
     if font_family and font_family.lower() != "roboto":
-        print(f"Loading Google Font: {font_family}")
+        _logger.info("Loading Google Font: %s", font_family)
         fonts = download_google_font(font_family)
         if fonts:
-            print(f"✓ Font '{font_family}' loaded successfully")
+            _logger.info("Font '%s' loaded successfully", font_family)
             return fonts
 
-        print(f"⚠ Failed to load '{font_family}', falling back to local Roboto")
+        _logger.warning("Failed to load '%s', falling back to local Roboto", font_family)
 
     # Default: Load local Roboto fonts
     fonts = {
@@ -168,7 +212,7 @@ def load_fonts(font_family: Optional[str] = None) -> Optional[dict]:
     # Verify fonts exist
     for _weight, path in fonts.items():
         if not os.path.exists(path):
-            print(f"⚠ Font not found: {path}")
+            _logger.warning("Font not found: %s", path)
             return None
 
     return fonts

@@ -16,10 +16,16 @@ import yaml
 from .core import (
     PosterGenerationOptions,
     StatusReporter,
+    _apply_paper_size,
+    _resolve_coordinates,
+    _validate_dpi,
     generate_posters,
+    get_available_themes,
     list_themes,
     print_examples,
 )
+
+_MAX_CONFIG_SIZE = 1_048_576  # 1 MB
 
 OPTION_FIELD_NAMES = {field.name for field in fields(PosterGenerationOptions)}
 CLI_TO_OPTION_FIELD = {
@@ -48,6 +54,7 @@ CONFIG_KEY_ALIASES = {
     "format": "output_format",
 }
 
+
 def _build_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
         description="Generate beautiful map posters for any city",
@@ -57,6 +64,7 @@ Examples:
   maptoposter-cli --city "New York" --country "USA"
   maptoposter-cli --city "Paris" --country "France" --theme noir --distance 15000
   maptoposter-cli --city Tokyo --country Japan --all-themes
+  maptoposter-cli --city London --country UK --dry-run
   maptoposter-cli --list-themes
         """,
     )
@@ -95,7 +103,7 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
         "-t",
         type=str,
         default="terracotta",
-        help="Theme name (default: terracotta)",
+        help="Theme name (default: terracotta). Use --list-themes to see all options",
     )
     parser.add_argument(
         "--themes",
@@ -114,7 +122,7 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
         "-d",
         type=int,
         default=18000,
-        help="Map radius in meters (default: 18000)",
+        help="Map radius in meters (default: 18000, max: 100000)",
     )
     parser.add_argument(
         "--width",
@@ -184,7 +192,8 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
         "--dpi",
         type=int,
         default=300,
-        help="Output DPI (default: 300). Affects PNG resolution directly; capped at 300 for vector formats (PDF, SVG)",
+        help="Output DPI (default: 300). Typical values: 72 (screen), 150 (draft), 300 (print)."
+             " Capped at 300 for vector formats (PDF, SVG)",
     )
     parser.add_argument(
         "--output-dir",
@@ -198,11 +207,27 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
         default="text",
         help="Status log format (text for humans, json for automation)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug output (verbose diagnostics)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="Show configuration summary and estimated output size without generating posters",
+    )
 
 
 def _load_config_file(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Config file '{path}' not found")
+    file_size = path.stat().st_size
+    if file_size > _MAX_CONFIG_SIZE:
+        raise ValueError(
+            f"Config file '{path}' is too large ({file_size} bytes, max {_MAX_CONFIG_SIZE})"
+        )
     text = path.read_text(encoding="utf-8")
     suffix = path.suffix.lower()
     if suffix in {".yaml", ".yml"}:
@@ -271,6 +296,39 @@ def _parse_coordinates(value: str | None) -> float | None:
     return parse(value)
 
 
+def _handle_dry_run(options: PosterGenerationOptions) -> int:
+    """Print a configuration summary and estimated output size without generating."""
+    reporter = StatusReporter(json_mode=False)
+    width, height = _apply_paper_size(
+        options.width, options.height, options.paper_size, options.orientation, reporter,
+    )
+    dpi = _validate_dpi(options.dpi, reporter)
+    available = get_available_themes()
+    from .core import _resolve_theme_names
+    themes = _resolve_theme_names(options, available)
+    coords = _resolve_coordinates(options, reporter)
+
+    px_w, px_h = int(width * dpi), int(height * dpi)
+    # Estimate PNG size: ~4 bytes/pixel (RGBA) compressed ~10:1
+    estimated_bytes = int(px_w * px_h * 4 / 10)
+    if estimated_bytes > 1_048_576:
+        size_str = f"{estimated_bytes / 1_048_576:.1f} MB"
+    else:
+        size_str = f"{estimated_bytes / 1024:.0f} KB"
+
+    print("\n--- Dry Run Summary ---")
+    print(f"City:        {options.city}")
+    print(f"Country:     {options.country}")
+    print(f"Coordinates: {coords[0]:.4f}, {coords[1]:.4f}")
+    print(f"Distance:    {options.distance} m")
+    print(f"Size:        {width}\" x {height}\" @ {dpi} DPI ({px_w} x {px_h} px)")
+    print(f"Format:      {options.output_format}")
+    print(f"Themes:      {', '.join(themes)}")
+    print(f"Est. size:   ~{size_str} per poster (PNG)")
+    print("--- No posters generated ---\n")
+    return 0
+
+
 def _should_show_examples(argv: Sequence[str] | None) -> bool:
     return (argv is None and len(sys.argv) == 1) or (argv is not None and len(argv) == 0)
 
@@ -299,10 +357,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             print_examples()
         return 1
 
-    reporter = StatusReporter(json_mode=args.log_format == "json")
+    if getattr(args, "dry_run", False):
+        return _handle_dry_run(options)
+
+    reporter = StatusReporter(
+        json_mode=args.log_format == "json",
+        debug=getattr(args, "debug", False),
+    )
 
     try:
         generate_posters(options, status_reporter=reporter)
+    except ValueError as exc:
+        print(f"\n✗ Configuration error: {exc}")
+        return 1
     except Exception as exc:  # pragma: no cover - surface fatal errors to users
         print(f"\n✗ Error: {exc}")
         traceback.print_exc()
