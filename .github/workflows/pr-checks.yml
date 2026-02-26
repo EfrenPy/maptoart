@@ -12,11 +12,12 @@ jobs:
   lint-and-validate:
     name: Lint and Validate - ${{ matrix.os }} - Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ['3.11', '3.12', '3.13', '3.14']
 
     steps:
@@ -45,7 +46,7 @@ jobs:
         run: maptoposter-cli --list-themes
 
       - name: Run tests
-        run: pytest --cov=maptoposter --cov-report=term-missing --cov-fail-under=85
+        run: pytest --cov=maptoposter --cov-report=term-missing --cov-fail-under=100
 
       - name: Lint with flake8
         run: |
@@ -60,9 +61,19 @@ jobs:
       - name: Type check with mypy
         run: mypy . --ignore-missing-imports --no-strict-optional
 
+  lock-check:
+    name: Lock file consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v5
+      - run: uv lock --check
+
   dependency-check:
     name: Security and Dependency Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
