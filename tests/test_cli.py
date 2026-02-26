@@ -224,11 +224,16 @@ class TestConfigFileSizeLimit:
 class TestNormalizeConfigData:
     """Tests for config normalization."""
 
-    def test_unknown_keys_ignored(self) -> None:
+    def test_unknown_keys_ignored_with_warning(self) -> None:
         raw = {"city": "Paris", "country": "France", "unknown_key": "value"}
-        result = cli._normalize_config_data(raw)
+        import warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = cli._normalize_config_data(raw)
         assert "unknown_key" not in result
         assert result["city"] == "Paris"
+        assert len(w) == 1
+        assert "unknown_key" in str(w[0].message)
 
     def test_format_alias(self) -> None:
         raw = {"format": "svg"}
@@ -241,6 +246,65 @@ class TestNormalizeConfigData:
         assert result["themes"] == ["noir"]
 
 
+class TestNoAttributionOverride:
+    """Tests for --no-attribution CLI flag (#R15-9)."""
+
+    def test_no_attribution_overrides_default(self) -> None:
+        parser = _build_parser()
+        args = _prepare_args(parser, [
+            "--city", "Paris", "--country", "France", "--no-attribution",
+        ])
+        options = cli._build_options_from_sources(parser, args)
+        assert options.show_attribution is False
+
+    def test_attribution_default_is_true(self) -> None:
+        parser = _build_parser()
+        args = _prepare_args(parser, ["--city", "Paris", "--country", "France"])
+        options = cli._build_options_from_sources(parser, args)
+        assert options.show_attribution is True
+
+
+class TestCacheClearFlag:
+    """Tests for --cache-clear flag."""
+
+    @patch("maptoposter.core.cache_clear", return_value=5)
+    def test_cache_clear_returns_zero(
+        self, mock_clear: MagicMock, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        result = cli.main(["--cache-clear"])
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "5" in output
+
+
+class TestCacheInfoFlag:
+    """Tests for --cache-info flag."""
+
+    @patch("maptoposter.core.cache_info", return_value={
+        "total_files": 2, "total_bytes": 4096,
+        "entries": [{"key": "test_v2", "size_bytes": 2048, "created": None, "ttl": None}],
+    })
+    def test_cache_info_returns_zero(
+        self, mock_info: MagicMock, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        result = cli.main(["--cache-info"])
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "2" in output
+
+
+class TestBatchCLI:
+    """Tests for --batch flag."""
+
+    @patch("maptoposter.batch.run_batch", return_value={"total": 2, "successes": ["a", "b"], "failures": []})
+    def test_batch_dispatches(self, mock_batch: MagicMock, tmp_path: Path) -> None:
+        csv_file = tmp_path / "cities.csv"
+        csv_file.write_text("city,country\nParis,France\nTokyo,Japan\n")
+        result = cli.main(["--batch", str(csv_file), "--city", "X", "--country", "Y"])
+        assert result == 0
+        mock_batch.assert_called_once()
+
+
 class TestCLIHelpText:
     """Tests for improved help text."""
 
@@ -251,3 +315,106 @@ class TestCLIHelpText:
         assert "Typical values" in help_text
         assert "--list-themes" in help_text
         assert "--dry-run" in help_text
+
+    def test_help_text_documents_env_vars(self) -> None:
+        parser = _build_parser()
+        help_text = parser.format_help()
+        assert "MAPTOPOSTER_OUTPUT_DIR" in help_text
+        assert "MAPTOPOSTER_CACHE_DIR" in help_text
+        assert "MAPTOPOSTER_THEMES_DIR" in help_text
+        assert "MAPTOPOSTER_NOMINATIM_DELAY" in help_text
+
+
+class TestParseCoordinatesNone:
+    """Test _parse_coordinates(None) returns None (#R19-3)."""
+
+    def test_none_returns_none(self) -> None:
+        assert cli._parse_coordinates(None) is None
+
+    def test_valid_string_returns_float(self) -> None:
+        result = cli._parse_coordinates("48.8566")
+        assert result == pytest.approx(48.8566)
+
+
+class TestDryRunKBFormatting:
+    """Test dry-run shows KB for small poster sizes (#R19-4)."""
+
+    @patch("maptoposter.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
+    def test_small_size_shows_kb(
+        self,
+        mock_coords: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+        sample_theme: dict[str, str],  # noqa: ARG002
+    ) -> None:
+        # width=1, height=1, dpi=72 => 72*72*4/10 = 2074 bytes (~2 KB, well under 1 MB)
+        result = cli.main([
+            "--city", "Paris", "--country", "France",
+            "--theme", "custom", "--dry-run",
+            "--width", "1", "--height", "1", "--dpi", "72",
+        ])
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "KB" in output
+        assert "MB" not in output.split("Est. size")[1]
+
+
+class TestGalleryFlag:
+    """Test --gallery flag triggers gallery generation (#R19-5)."""
+
+    @patch("maptoposter.gallery.generate_gallery", return_value="/tmp/gallery.html")
+    @patch("maptoposter.cli.generate_posters", return_value=["/tmp/paris_custom.png"])
+    @patch("maptoposter.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
+    def test_gallery_flag_calls_generate_gallery(
+        self,
+        mock_coords: MagicMock,
+        mock_gen: MagicMock,
+        mock_gallery: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+        sample_theme: dict[str, str],  # noqa: ARG002
+    ) -> None:
+        result = cli.main([
+            "--city", "Paris", "--country", "France",
+            "--theme", "custom", "--gallery",
+        ])
+        assert result == 0
+        mock_gallery.assert_called_once()
+        output = capsys.readouterr().out
+        assert "Gallery" in output
+
+    @patch("maptoposter.cli.generate_posters", return_value=["/tmp/paris_custom.png"])
+    @patch("maptoposter.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
+    def test_no_gallery_flag_skips_gallery(
+        self,
+        mock_coords: MagicMock,
+        mock_gen: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+        sample_theme: dict[str, str],  # noqa: ARG002
+    ) -> None:
+        result = cli.main([
+            "--city", "Paris", "--country", "France",
+            "--theme", "custom",
+        ])
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "Gallery" not in output
+
+
+class TestGeneratePostersValueError:
+    """Test main() handles ValueError from generate_posters (#R20-3)."""
+
+    @patch("maptoposter.cli.generate_posters", side_effect=ValueError("bad config"))
+    @patch("maptoposter.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
+    def test_value_error_returns_1(
+        self,
+        mock_coords: MagicMock,
+        mock_gen: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+        sample_theme: dict[str, str],  # noqa: ARG002
+    ) -> None:
+        result = cli.main([
+            "--city", "Paris", "--country", "France", "--theme", "custom",
+        ])
+        assert result == 1
+        output = capsys.readouterr().out
+        assert "Configuration error" in output
+        assert "bad config" in output

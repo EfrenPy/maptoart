@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import traceback
+import warnings
 from dataclasses import fields
 from pathlib import Path
 from typing import Any, Sequence
@@ -66,6 +68,14 @@ Examples:
   maptoposter-cli --city Tokyo --country Japan --all-themes
   maptoposter-cli --city London --country UK --dry-run
   maptoposter-cli --list-themes
+
+Environment variables:
+  MAPTOPOSTER_OUTPUT_DIR      Default output directory for posters
+  MAPTOPOSTER_CACHE_DIR       OSM data cache directory (default: cache/)
+  MAPTOPOSTER_THEMES_DIR      Custom themes directory
+  MAPTOPOSTER_FONTS_DIR       Bundled font files directory
+  MAPTOPOSTER_FONTS_CACHE     Google Fonts download cache
+  MAPTOPOSTER_NOMINATIM_DELAY Rate-limit delay in seconds (default: 1)
         """,
     )
 
@@ -218,6 +228,28 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Show configuration summary and estimated output size without generating posters",
     )
+    parser.add_argument(
+        "--batch",
+        type=str,
+        help="Path to a CSV or JSON file with multiple cities for batch generation",
+    )
+    parser.add_argument(
+        "--gallery",
+        action="store_true",
+        help="Generate an HTML gallery of all posters in the output directory",
+    )
+    parser.add_argument(
+        "--cache-clear",
+        dest="cache_clear",
+        action="store_true",
+        help="Clear the OSM data cache and exit",
+    )
+    parser.add_argument(
+        "--cache-info",
+        dest="cache_info",
+        action="store_true",
+        help="Show cache statistics and exit",
+    )
 
 
 def _load_config_file(path: Path) -> dict[str, Any]:
@@ -240,6 +272,13 @@ def _load_config_file(path: Path) -> dict[str, Any]:
 
 
 def _normalize_config_data(raw: dict[str, Any]) -> dict[str, Any]:
+    unknown = [k for k in raw if k not in OPTION_FIELD_NAMES
+               and k not in CONFIG_KEY_ALIASES and k != "no_attribution"]
+    if unknown:
+        warnings.warn(
+            f"Unknown config keys ignored: {', '.join(sorted(unknown))}",
+            stacklevel=2,
+        )
     normalized: dict[str, Any] = {}
     for key, value in raw.items():
         if key == "no_attribution":
@@ -291,6 +330,11 @@ def _build_options_from_sources(
 
 
 def _parse_coordinates(value: str | None) -> float | None:
+    """Parse a coordinate string to float using lat-lon-parser.
+
+    Accepts decimal degrees (``"48.8566"``) and DMS notation
+    (``"48°51'N"``).  Returns ``None`` when *value* is ``None``.
+    """
     if value is None:
         return None
     return parse(value)
@@ -338,12 +382,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     _add_arguments(parser)
     args = parser.parse_args(argv)
 
+    log_level = logging.DEBUG if getattr(args, "debug", False) else logging.WARNING
+    logging.basicConfig(
+        level=log_level,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+
     if _should_show_examples(argv):
         print_examples()
         return 0
 
     if args.list_themes:
         list_themes()
+        return 0
+
+    if getattr(args, "cache_clear", False):
+        from .core import cache_clear
+        count = cache_clear()
+        print(f"Cleared {count} cache files.")
+        return 0
+
+    if getattr(args, "cache_info", False):
+        from .core import cache_info
+        info = cache_info()
+        print(f"Cache files: {info['total_files']}")
+        print(f"Total size:  {info['total_bytes'] / 1024:.1f} KB")
+        for entry in info["entries"]:
+            ttl_str = f", TTL={entry['ttl']}s" if entry.get("ttl") else ""
+            print(f"  {entry['key']} ({entry['size_bytes']} bytes{ttl_str})")
         return 0
 
     args.latitude = _parse_coordinates(args.latitude)
@@ -365,8 +431,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         debug=getattr(args, "debug", False),
     )
 
+    if getattr(args, "batch", None):
+        from .batch import run_batch
+        overrides = _collect_cli_overrides(parser, args)
+        overrides.pop("city", None)
+        overrides.pop("country", None)
+        result = run_batch(
+            Path(args.batch),
+            global_overrides=overrides,
+            status_reporter=reporter,
+            dry_run=getattr(args, "dry_run", False),
+        )
+        return 1 if result["failures"] else 0
+
     try:
-        generate_posters(options, status_reporter=reporter)
+        outputs = generate_posters(options, status_reporter=reporter)
     except ValueError as exc:
         print(f"\n✗ Configuration error: {exc}")
         return 1
@@ -374,6 +453,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"\n✗ Error: {exc}")
         traceback.print_exc()
         return 1
+
+    if getattr(args, "gallery", False) and outputs:
+        from .gallery import generate_gallery
+        output_dir = str(Path(outputs[0]).parent) if outputs else "posters"
+        gallery_path = generate_gallery(output_dir)
+        print(f"Gallery: {gallery_path}")
 
     return 0
 
