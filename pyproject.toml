@@ -1,6 +1,6 @@
 [project]
 name = "maptoposter"
-version = "0.4.0"
+version = "0.4.1"
 description = "Generate beautiful, minimalist map posters for any city in the world."
 readme = "README.md"
 requires-python = ">=3.11"
