@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Iterator
+from unittest.mock import patch
 
 import networkx as nx
 import pytest
@@ -21,6 +22,14 @@ def _clear_theme_cache() -> Iterator[None]:
     yield
     with core._theme_cache_lock:
         core._theme_cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def _patch_geocoding_sleep() -> Iterator[None]:
+    """Eliminate the 1-second Nominatim rate-limit delay in all tests (#14)."""
+    with patch("maptoposter.geocoding.time.sleep"):
+        with patch("tenacity.nap.time.sleep"):
+            yield
 
 
 @pytest.fixture
@@ -87,3 +96,22 @@ def sample_graph() -> nx.MultiDiGraph:
 @pytest.fixture
 def base_options() -> PosterGenerationOptions:
     return PosterGenerationOptions(city="Paris", country="France")
+
+
+def build_synthetic_graph() -> nx.MultiDiGraph:
+    """Build a small synthetic graph for integration/performance tests."""
+    g = nx.MultiDiGraph()
+    g.graph["crs"] = "EPSG:4326"
+    nodes = [
+        (1, {"x": 2.3500, "y": 48.8550}),
+        (2, {"x": 2.3510, "y": 48.8560}),
+        (3, {"x": 2.3520, "y": 48.8570}),
+        (4, {"x": 2.3530, "y": 48.8580}),
+        (5, {"x": 2.3540, "y": 48.8590}),
+    ]
+    g.add_nodes_from(nodes)
+    g.add_edge(1, 2, highway="primary", length=100)
+    g.add_edge(2, 3, highway="secondary", length=100)
+    g.add_edge(3, 4, highway="residential", length=100)
+    g.add_edge(4, 5, highway="residential", length=100)
+    return g

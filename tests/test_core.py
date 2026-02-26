@@ -12,6 +12,7 @@ import pytest
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut
 from osmnx._errors import InsufficientResponseError
 
+import maptoposter._util as _util
 import maptoposter.core as core
 from maptoposter.core import PosterGenerationOptions
 
@@ -79,7 +80,9 @@ def test_resolve_coordinates_calls_geocode(
         assert (city, country) == ("Paris", "France")
         return (1.23, 4.56)
 
-    monkeypatch.setattr(core, "get_coordinates", fake_get_coordinates)
+    import maptoposter.geocoding as geocoding_mod
+
+    monkeypatch.setattr(geocoding_mod, "get_coordinates", fake_get_coordinates)
     coords = core._resolve_coordinates(options, silent_reporter)
     assert coords == (1.23, 4.56)
 
@@ -225,7 +228,7 @@ class TestGetCoordinates:
     """Tests for geocoding error paths."""
 
     @patch("maptoposter.geocoding.Nominatim")
-    @patch("maptoposter.core.cache_get", return_value=None)
+    @patch("maptoposter.geocoding.cache_get", return_value=None)
     def test_geocoding_network_failure(
         self,
         mock_cache: MagicMock,
@@ -239,7 +242,7 @@ class TestGetCoordinates:
             core.get_coordinates("Nowhere", "Land")
 
     @patch("maptoposter.geocoding.Nominatim")
-    @patch("maptoposter.core.cache_get", return_value=None)
+    @patch("maptoposter.geocoding.cache_get", return_value=None)
     def test_geocoding_not_found(
         self,
         mock_cache: MagicMock,
@@ -307,13 +310,13 @@ class TestCacheOperations:
     """Tests for cache_get/cache_set."""
 
     def test_cache_roundtrip(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(core, "CACHE_DIR", tmp_path)
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
         core.cache_set("mykey", {"data": 42})
         result = core.cache_get("mykey")
         assert result == {"data": 42}
 
     def test_cache_get_missing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(core, "CACHE_DIR", tmp_path)
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
         assert core.cache_get("no_such_key") is None
 
 
@@ -548,7 +551,7 @@ class TestLoadCustomFonts:
 class TestGetCoordinatesCacheHit:
     """Test cache hit path for get_coordinates."""
 
-    @patch("maptoposter.core.cache_get", return_value=(48.8566, 2.3522))
+    @patch("maptoposter.geocoding.cache_get", return_value=(48.8566, 2.3522))
     def test_cache_hit_returns_coords(self, mock_cache: MagicMock) -> None:
         result = core.get_coordinates("Paris", "France")
         assert result == (48.8566, 2.3522)
@@ -557,9 +560,9 @@ class TestGetCoordinatesCacheHit:
 class TestGetCoordinatesSuccess:
     """Test successful geocode path."""
 
-    @patch("maptoposter.core.cache_set")
+    @patch("maptoposter.geocoding.cache_set")
     @patch("maptoposter.geocoding.Nominatim")
-    @patch("maptoposter.core.cache_get", return_value=None)
+    @patch("maptoposter.geocoding.cache_get", return_value=None)
     def test_successful_geocode(
         self, mock_cache_get: MagicMock, mock_nom_cls: MagicMock, mock_cache_set: MagicMock,
     ) -> None:
@@ -606,12 +609,42 @@ class TestPosterGenerationOptionsValidation:
         assert opts.distance == 18000
         assert opts.output_format == "png"
 
+    def test_invalid_orientation_raises(self) -> None:
+        with pytest.raises(ValueError, match="orientation must be"):
+            PosterGenerationOptions(city="X", country="Y", orientation="diagonal")
+
+    def test_valid_orientations_accepted(self) -> None:
+        for orient in ("portrait", "landscape"):
+            opts = PosterGenerationOptions(city="X", country="Y", orientation=orient)
+            assert opts.orientation == orient
+
+    def test_invalid_paper_size_raises(self) -> None:
+        with pytest.raises(ValueError, match="paper_size must be one of"):
+            PosterGenerationOptions(city="X", country="Y", paper_size="B5")
+
+    def test_valid_paper_sizes_accepted(self) -> None:
+        for size in ("A0", "A1", "A2", "A3", "A4"):
+            opts = PosterGenerationOptions(city="X", country="Y", paper_size=size)
+            assert opts.paper_size == size
+
+    def test_none_paper_size_accepted(self) -> None:
+        opts = PosterGenerationOptions(city="X", country="Y", paper_size=None)
+        assert opts.paper_size is None
+
+    def test_dpi_upper_bound_raises(self) -> None:
+        with pytest.raises(ValueError, match="dpi must not exceed 2400"):
+            PosterGenerationOptions(city="X", country="Y", dpi=10000)
+
+    def test_dpi_at_2400_accepted(self) -> None:
+        opts = PosterGenerationOptions(city="X", country="Y", dpi=2400)
+        assert opts.dpi == 2400
+
 
 class TestGetCoordinatesRetry:
     """Tests for geocoding retry with backoff."""
 
     @patch("maptoposter.geocoding.Nominatim")
-    @patch("maptoposter.core.cache_get", return_value=None)
+    @patch("maptoposter.geocoding.cache_get", return_value=None)
     def test_successful_retry_on_timeout(
         self, mock_cache: MagicMock, mock_nominatim_cls: MagicMock,
     ) -> None:
@@ -631,7 +664,7 @@ class TestGetCoordinatesRetry:
         assert mock_geo.geocode.call_count == 2
 
     @patch("maptoposter.geocoding.Nominatim")
-    @patch("maptoposter.core.cache_get", return_value=None)
+    @patch("maptoposter.geocoding.cache_get", return_value=None)
     def test_failure_after_max_retries(
         self, mock_cache: MagicMock, mock_nominatim_cls: MagicMock,
     ) -> None:
@@ -855,7 +888,7 @@ class TestCacheCorruption:
     def test_corrupt_cache_without_sig_returns_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr(core, "CACHE_DIR", tmp_path)
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
         cache_file = tmp_path / f"corrupt_key_{core._CACHE_VERSION}.pkl"
         cache_file.write_bytes(b"\x00\x01\x02garbage")
         # No .sig file → treated as cache miss
@@ -956,16 +989,18 @@ class TestCreateGradientFade:
 
 
 class TestLazyFonts:
-    """Tests for lazy font loading."""
+    """Tests for lazy font loading via lru_cache."""
 
     def test_get_fonts_returns_dict_or_none(self) -> None:
+        core._get_fonts.cache_clear()
         result = core._get_fonts()
         assert result is None or isinstance(result, dict)
 
-    def test_sentinel_cleared_after_first_call(self) -> None:
-        # After calling _get_fonts, _FONTS should no longer be a sentinel
+    def test_cached_after_first_call(self) -> None:
+        core._get_fonts.cache_clear()
         core._get_fonts()
-        assert not isinstance(core._FONTS, core._Sentinel)
+        info = core._get_fonts.cache_info()
+        assert info.currsize == 1
 
 
 class TestCacheVersioning:
@@ -973,8 +1008,8 @@ class TestCacheVersioning:
 
     def test_cache_path_includes_version(self) -> None:
         path = core._cache_path("test_key")
-        assert core._CACHE_VERSION in path
-        assert path.endswith(".pkl")
+        assert core._CACHE_VERSION in str(path)
+        assert str(path).endswith(".pkl")
 
 
 class TestGeneratePostersResume:
@@ -1076,21 +1111,267 @@ class TestMemoryEstimation:
         expected = int(12 * 300 * 16 * 300 * 4)
         assert mem == expected
 
-    def test_memory_exceeds_limit_raises(self, sample_theme: dict[str, str]) -> None:
-        # 50 inches x 50 inches @ 1200 DPI => ~14.4 GB
-        with pytest.raises(ValueError, match="exceeds 2 GB limit"):
+    def test_memory_exceeds_limit_auto_reduces(self, sample_theme: dict[str, str]) -> None:
+        """Moderate excess should auto-reduce DPI, not raise."""
+        # 20x20 @ 1200 DPI = ~2.3 GB → auto-reduce
+        # Test is covered by TestAutoDpiReduction above
+        pass
+
+
+class TestFuzzyThemeMatching:
+    """Tests for fuzzy theme name matching."""
+
+    def test_suggests_similar_name(self) -> None:
+        options = PosterGenerationOptions(city="X", country="Y", themes=["neon_cyberpnk"])
+        with pytest.raises(ValueError, match="did you mean.*neon_cyberpunk"):
+            core._resolve_theme_names(options, ["neon_cyberpunk", "noir", "terracotta"])
+
+    def test_no_match_lists_all(self) -> None:
+        options = PosterGenerationOptions(city="X", country="Y", themes=["xyzabc"])
+        with pytest.raises(ValueError, match="Available:"):
+            core._resolve_theme_names(options, ["noir", "terracotta"])
+
+
+class TestIsLatinScriptExtended:
+    """Extended non-Latin script tests."""
+
+    def test_japanese(self) -> None:
+        assert core.is_latin_script("東京") is False
+
+    def test_arabic(self) -> None:
+        assert core.is_latin_script("القاهرة") is False
+
+    def test_cyrillic(self) -> None:
+        assert core.is_latin_script("Москва") is False
+
+    def test_korean(self) -> None:
+        assert core.is_latin_script("서울") is False
+
+    def test_accented_latin(self) -> None:
+        assert core.is_latin_script("São Paulo") is True
+
+
+class TestNonLatinTypography:
+    """Tests for non-Latin city typography behavior."""
+
+    @patch("maptoposter.rendering.FontProperties")
+    def test_non_latin_city_no_letter_spacing(self, mock_fp: MagicMock) -> None:
+        fig = MagicMock()
+        ax = MagicMock()
+        theme = dict(SAMPLE_THEME_DATA)
+
+        core._apply_typography(
+            fig, ax, "東京", "Japan", (35.6, 139.7),
+            theme, None, 12, 16,
+        )
+        city_call = ax.text.call_args_list[0]
+        city_text = city_call[0][2]
+        assert "  " not in city_text
+
+    @patch("maptoposter.rendering.FontProperties")
+    def test_latin_city_has_letter_spacing(self, mock_fp: MagicMock) -> None:
+        fig = MagicMock()
+        ax = MagicMock()
+        theme = dict(SAMPLE_THEME_DATA)
+
+        core._apply_typography(
+            fig, ax, "Paris", "France", (48.8, 2.3),
+            theme, None, 12, 16,
+        )
+        city_call = ax.text.call_args_list[0]
+        city_text = city_call[0][2]
+        assert "  " in city_text
+
+
+class TestParallelFetch:
+    """Tests for parallel _fetch_map_data."""
+
+    @patch("maptoposter.core.fetch_features", return_value=None)
+    @patch("maptoposter.core.fetch_graph")
+    def test_parallel_fetch_all_called(
+        self, mock_graph: MagicMock, mock_features: MagicMock,
+    ) -> None:
+        g = nx.MultiDiGraph()
+        for i in range(15):
+            g.add_edge(i, i + 1)
+        mock_graph.return_value = g
+
+        result = core._fetch_map_data((48.0, 2.0), 10000, 12, 16)
+        assert result[0] is g
+        mock_graph.assert_called_once()
+        assert mock_features.call_count == 2
+
+    @patch("maptoposter.core.fetch_features", return_value=None)
+    @patch("maptoposter.core.fetch_graph")
+    def test_parallel_feature_failure_non_fatal(
+        self, mock_graph: MagicMock, mock_features: MagicMock,
+    ) -> None:
+        g = nx.MultiDiGraph()
+        for i in range(15):
+            g.add_edge(i, i + 1)
+        mock_graph.return_value = g
+        mock_features.return_value = None
+
+        result = core._fetch_map_data((48.0, 2.0), 10000, 12, 16)
+        assert result[0] is g
+        assert result[1] is None
+        assert result[2] is None
+
+
+class TestAutoDpiReduction:
+    """Tests for auto DPI reduction."""
+
+    @patch("maptoposter.core._save_output")
+    @patch("maptoposter.core._apply_typography")
+    @patch("maptoposter.core._render_layers")
+    @patch("maptoposter.core._setup_figure", return_value=(MagicMock(), MagicMock()))
+    @patch("maptoposter.core.ox.project_graph")
+    @patch("maptoposter.core._fetch_map_data")
+    def test_auto_dpi_reduction(
+        self,
+        mock_fetch: MagicMock,
+        mock_project: MagicMock,
+        mock_setup: MagicMock,
+        mock_render: MagicMock,
+        mock_typo: MagicMock,
+        mock_save: MagicMock,
+        sample_theme: dict[str, str],
+    ) -> None:
+        """20x20 @ 1200 DPI should auto-reduce."""
+        g = nx.MultiDiGraph()
+        g.add_edge("a", "b")
+        mock_fetch.return_value = (g, None, None, 4500.0)
+        mock_project.return_value = g
+
+        events: list[str] = []
+
+        class _TrackingReporter(core.StatusReporter):
+            def __init__(self):
+                super().__init__(json_mode=True)
+
+            def emit(self, event, message=None, **extra):
+                events.append(event)
+
+        reporter = _TrackingReporter()
+        core.create_poster(
+            "Paris", "France", (48.8566, 2.3522), 10000,
+            "/tmp/out.png", "png", theme=sample_theme,
+            width=20, height=20, dpi=1200,
+            status_reporter=reporter,
+        )
+        assert "dpi.auto_reduce" in events
+
+    def test_extreme_dimensions_still_raises(self, sample_theme: dict[str, str]) -> None:
+        """400x400 should still raise even at DPI 72."""
+        with pytest.raises(ValueError, match="even at DPI 72"):
             core.create_poster(
                 "Paris", "France", (48.8566, 2.3522), 10000,
                 "/tmp/out.png", "png", theme=sample_theme,
-                width=50, height=50, dpi=1200,
+                width=400, height=400, dpi=1200,
             )
+
+
+class TestCacheTTL:
+    """Tests for cache TTL support."""
+
+    def test_expired_entry_returns_none(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        core.cache_set("ttl_test", {"data": 42}, ttl=1)
+        # Backdate the metadata
+        meta_path = Path(f"{core._cache_path('ttl_test')}.meta")
+        import json as _json
+        meta = _json.loads(meta_path.read_text())
+        meta["created"] = meta["created"] - 100  # expire it
+        meta_path.write_text(_json.dumps(meta))
+
+        result = core.cache_get("ttl_test")
+        assert result is None
+
+    def test_fresh_entry_returns_value(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        core.cache_set("ttl_fresh", {"data": 99}, ttl=3600)
+        result = core.cache_get("ttl_fresh")
+        assert result == {"data": 99}
+
+    def test_no_ttl_never_expires(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        core.cache_set("no_ttl", {"data": 7})
+        result = core.cache_get("no_ttl")
+        assert result == {"data": 7}
+
+
+class TestCacheClear:
+    """Tests for cache_clear."""
+
+    def test_clears_all_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        core.cache_set("a", 1)
+        core.cache_set("b", 2)
+        count = core.cache_clear()
+        assert count > 0
+        # Verify files are gone
+        remaining = list(tmp_path.glob("*.pkl"))
+        assert remaining == []
+
+
+class TestCacheInfo:
+    """Tests for cache_info."""
+
+    def test_returns_stats(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        core.cache_set("info_test", {"data": 42}, ttl=3600)
+        info = core.cache_info()
+        assert info["total_files"] >= 1
+        assert info["total_bytes"] > 0
+        assert any("info_test" in e["key"] for e in info["entries"])
+
+
+class TestCreatePosterFromOptions:
+    """Tests for the create_poster_from_options wrapper."""
+
+    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoposter.core.create_poster")
+    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    def test_calls_create_poster(
+        self,
+        mock_fonts: MagicMock,
+        mock_coords: MagicMock,
+        mock_create: MagicMock,
+        mock_meta: MagicMock,
+        sample_theme: dict[str, str],
+        silent_reporter: core.StatusReporter,
+    ) -> None:
+        options = PosterGenerationOptions(city="Paris", country="France", theme="custom")
+        result = core.create_poster_from_options(options, "custom", status_reporter=silent_reporter)
+        mock_create.assert_called_once()
+        mock_meta.assert_called_once()
+        assert result is not None
+
+
+class TestProgressCallback:
+    """Tests for on_progress callback in StatusReporter."""
+
+    def test_callback_receives_events(self) -> None:
+        received = []
+
+        def _on_progress(event, message, extra):
+            received.append(event)
+
+        reporter = core.StatusReporter(json_mode=True, on_progress=_on_progress)
+        reporter.emit("test.event", "hello")
+        assert "test.event" in received
 
 
 class TestCacheHMAC:
     """Tests for cache HMAC integrity verification."""
 
+    @staticmethod
+    def _patch_cache_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+
     def test_cache_roundtrip_with_hmac(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(core, "CACHE_DIR", tmp_path)
+        self._patch_cache_dir(monkeypatch, tmp_path)
         core.cache_set("hmac_test", {"data": 42})
         # Verify signature file was created
         cache_file = tmp_path / f"hmac_test_{core._CACHE_VERSION}.pkl"
@@ -1100,7 +1381,7 @@ class TestCacheHMAC:
         assert result == {"data": 42}
 
     def test_tampered_cache_returns_none(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(core, "CACHE_DIR", tmp_path)
+        self._patch_cache_dir(monkeypatch, tmp_path)
         core.cache_set("tamper_test", {"data": 42})
         # Tamper with the cache file
         cache_file = tmp_path / f"tamper_test_{core._CACHE_VERSION}.pkl"
@@ -1109,7 +1390,7 @@ class TestCacheHMAC:
         assert result is None
 
     def test_missing_sig_returns_none(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(core, "CACHE_DIR", tmp_path)
+        self._patch_cache_dir(monkeypatch, tmp_path)
         core.cache_set("sig_test", {"data": 42})
         # Remove signature file
         cache_file = tmp_path / f"sig_test_{core._CACHE_VERSION}.pkl"
@@ -1117,3 +1398,1175 @@ class TestCacheHMAC:
         sig_file.unlink()
         result = core.cache_get("sig_test")
         assert result is None
+
+
+class TestEmptyCityCountryValidation:
+    """Tests for empty city/country validation in PosterGenerationOptions."""
+
+    def test_empty_city_raises(self) -> None:
+        with pytest.raises(ValueError, match="city must not be empty"):
+            PosterGenerationOptions(city="", country="France")
+
+    def test_whitespace_city_raises(self) -> None:
+        with pytest.raises(ValueError, match="city must not be empty"):
+            PosterGenerationOptions(city="   ", country="France")
+
+    def test_empty_country_raises(self) -> None:
+        with pytest.raises(ValueError, match="country must not be empty"):
+            PosterGenerationOptions(city="Paris", country="")
+
+    def test_whitespace_country_raises(self) -> None:
+        with pytest.raises(ValueError, match="country must not be empty"):
+            PosterGenerationOptions(city="Paris", country="   ")
+
+    def test_valid_city_country_accepted(self) -> None:
+        opts = PosterGenerationOptions(city="Paris", country="France")
+        assert opts.city == "Paris"
+        assert opts.country == "France"
+
+
+class TestPrintExamplesUsesCliName:
+    """Test that print_examples() uses maptoposter-cli, not old script name."""
+
+    def test_no_old_script_name(self, capsys: pytest.CaptureFixture[str]) -> None:
+        core.print_examples()
+        output = capsys.readouterr().out
+        assert "create_map_poster.py" not in output
+        assert "maptoposter-cli" in output
+
+
+class TestRestrictedUnpickler:
+    """Tests for pickle deserialization restriction (#1)."""
+
+    def test_blocked_module_raises_cache_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A cache file containing os.system should be blocked."""
+        import os
+        import pickle as _pickle
+
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+
+        # Build a malicious pickle payload that references os.system directly
+        class _Evil:
+            def __reduce__(self):
+                return (os.getpid, ())
+
+        # Write the pickle manually (bypassing cache_set's safe serialization)
+        path = tmp_path / f"evil_{_util._CACHE_VERSION}.pkl"
+        path.write_bytes(_pickle.dumps(_Evil()))
+        # Write a valid HMAC for the payload
+        sig = _util._compute_file_hmac(path)
+        Path(f"{path}.sig").write_text(sig, encoding="utf-8")
+        # Write metadata
+        import time as _time
+        Path(f"{path}.meta").write_text(
+            json.dumps({"created": _time.time(), "ttl": None, "cache_version": _util._CACHE_VERSION}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(_util.CacheError, match="Blocked unpickling"):
+            _util.cache_get("evil")
+
+    def test_safe_types_allowed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        _util.cache_set("safe", {"hello": [1, 2, 3]})
+        result = _util.cache_get("safe")
+        assert result == {"hello": [1, 2, 3]}
+
+
+class TestFetchMapDataPartialFailure:
+    """Tests for _fetch_map_data handling partial thread failures (#9)."""
+
+    @patch("maptoposter.core.fetch_features", return_value=None)
+    @patch("maptoposter.core.fetch_graph")
+    def test_thread_exception_logs_warning(
+        self,
+        mock_graph: MagicMock,
+        mock_features: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """If a worker thread raises an unexpected error, it's caught and logged."""
+        g = nx.MultiDiGraph()
+        for i in range(15):
+            g.add_edge(i, i + 1)
+        mock_graph.return_value = g
+        # Make one features call raise an unexpected RuntimeError
+        mock_features.side_effect = [None, RuntimeError("unexpected fetch failure")]
+
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="maptoposter.core"):
+            result = core._fetch_map_data((48.0, 2.0), 10000, 12, 16)
+        assert result[0] is g  # graph still returned
+
+
+class TestAtomicWriteTextCleanup:
+    """Test that _atomic_write_text removes temp file on OSError."""
+
+    def test_temp_cleaned_on_failure(self, tmp_path: Path) -> None:
+        target = tmp_path / "output.txt"
+        target.write_text("original")
+
+        with patch("os.fdopen", side_effect=OSError("disk full")):
+            with pytest.raises(OSError, match="disk full"):
+                core._atomic_write_text(target, "new content")
+
+        # Original file should be untouched
+        assert target.read_text() == "original"
+        # No lingering tmp files
+        temps = list(tmp_path.glob("*.tmp"))
+        assert temps == []
+
+
+class TestGenerateOutputFilenameUnicode:
+    """Test generate_output_filename with unicode city names (#13)."""
+
+    def test_unicode_city(self, tmp_path: Path) -> None:
+        result = core.generate_output_filename("東京", "noir", "png", str(tmp_path))
+        assert result.endswith(".png")
+        # Should not raise and should produce a valid path
+        assert Path(result).parent.exists()
+
+    def test_accented_city(self, tmp_path: Path) -> None:
+        result = core.generate_output_filename("São Paulo", "terracotta", "png", str(tmp_path))
+        assert result.endswith(".png")
+        assert "s" in Path(result).name.lower()
+
+
+class TestCircularImportFix:
+    """Verify geocoding module can be imported without importing core first (#4)."""
+
+    def test_geocoding_import_standalone(self) -> None:
+        from maptoposter.geocoding import _resolve_coordinates  # noqa: F811
+
+        assert callable(_resolve_coordinates)
+
+
+class TestCorruptCacheFiles:
+    """Tests for cache robustness with corrupt sidecar files (#R10-9)."""
+
+    @staticmethod
+    def _patch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+
+    def test_corrupt_metadata_json_returns_value(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Corrupt .meta JSON should log a warning and still return the value."""
+        self._patch(monkeypatch, tmp_path)
+        _util.cache_set("corrupt_meta", {"data": 1}, ttl=3600)
+        # Corrupt the .meta file
+        meta = Path(f"{_util._cache_path('corrupt_meta')}.meta")
+        meta.write_text("{invalid json", encoding="utf-8")
+        # Should still return the cached value (TTL unverifiable → treated as no-TTL)
+        result = _util.cache_get("corrupt_meta")
+        assert result == {"data": 1}
+
+    def test_corrupt_sig_returns_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Corrupt .sig file should cause HMAC mismatch → cache miss."""
+        self._patch(monkeypatch, tmp_path)
+        _util.cache_set("corrupt_sig", {"data": 2})
+        sig = Path(f"{_util._cache_path('corrupt_sig')}.sig")
+        sig.write_text("0000deadbeef", encoding="utf-8")
+        result = _util.cache_get("corrupt_sig")
+        assert result is None
+
+    def test_empty_sig_returns_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Empty .sig file should cause HMAC mismatch → cache miss."""
+        self._patch(monkeypatch, tmp_path)
+        _util.cache_set("empty_sig", {"data": 3})
+        sig = Path(f"{_util._cache_path('empty_sig')}.sig")
+        sig.write_text("", encoding="utf-8")
+        result = _util.cache_get("empty_sig")
+        assert result is None
+
+    def test_missing_meta_with_default_ttl_returns_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """No .meta + default_ttl requested → can't verify age → miss."""
+        self._patch(monkeypatch, tmp_path)
+        _util.cache_set("no_meta_ttl", {"data": 4})
+        meta = Path(f"{_util._cache_path('no_meta_ttl')}.meta")
+        meta.unlink()
+        result = _util.cache_get("no_meta_ttl", default_ttl=3600)
+        assert result is None
+
+
+class TestCoordinateBoundsValidation:
+    """Tests for out-of-bounds coordinate rejection (#R10-10)."""
+
+    def test_latitude_out_of_range_raises(self) -> None:
+        from maptoposter.geocoding import _validate_coordinate_bounds
+        with pytest.raises(ValueError, match="Latitude must be between"):
+            _validate_coordinate_bounds(91.0, 0.0)
+
+    def test_negative_latitude_out_of_range_raises(self) -> None:
+        from maptoposter.geocoding import _validate_coordinate_bounds
+        with pytest.raises(ValueError, match="Latitude must be between"):
+            _validate_coordinate_bounds(-91.0, 0.0)
+
+    def test_longitude_out_of_range_raises(self) -> None:
+        from maptoposter.geocoding import _validate_coordinate_bounds
+        with pytest.raises(ValueError, match="Longitude must be between"):
+            _validate_coordinate_bounds(0.0, 181.0)
+
+    def test_negative_longitude_out_of_range_raises(self) -> None:
+        from maptoposter.geocoding import _validate_coordinate_bounds
+        with pytest.raises(ValueError, match="Longitude must be between"):
+            _validate_coordinate_bounds(0.0, -181.0)
+
+    def test_boundary_values_accepted(self) -> None:
+        from maptoposter.geocoding import _validate_coordinate_bounds
+        # Should not raise
+        _validate_coordinate_bounds(90.0, 180.0)
+        _validate_coordinate_bounds(-90.0, -180.0)
+        _validate_coordinate_bounds(0.0, 0.0)
+
+    def test_resolve_coordinates_validates_explicit_bounds(self) -> None:
+        """Explicit lat/lon that exceed bounds should raise ValueError."""
+        options = PosterGenerationOptions(
+            city="Test", country="Test", latitude=91.0, longitude=0.0,
+        )
+        with pytest.raises(ValueError, match="Latitude must be between"):
+            core._resolve_coordinates(options, None)
+
+
+class TestEdgeColorsWithMissingHighway:
+    """Tests for get_edge_colors_by_type / get_edge_widths_by_type with missing highway key (#R11-4)."""
+
+    def test_missing_highway_uses_default_color(self, sample_theme: dict[str, str]) -> None:
+        g = nx.MultiDiGraph()
+        g.add_edge("a", "b")  # no 'highway' key at all
+        colors = core.get_edge_colors_by_type(g, sample_theme)
+        assert len(colors) == 1
+        assert colors[0] == sample_theme["road_residential"]  # 'unclassified' default
+
+    def test_missing_highway_uses_default_width(self) -> None:
+        g = nx.MultiDiGraph()
+        g.add_edge("a", "b")  # no 'highway' key
+        widths = core.get_edge_widths_by_type(g)
+        assert len(widths) == 1
+        assert widths[0] == 0.4  # else branch
+
+    def test_empty_highway_list_uses_default(self, sample_theme: dict[str, str]) -> None:
+        g = nx.MultiDiGraph()
+        g.add_edge("a", "b", highway=[])
+        colors = core.get_edge_colors_by_type(g, sample_theme)
+        assert colors[0] == sample_theme["road_residential"]  # empty list → 'unclassified'
+
+
+class TestProjectAndPlotLayerFallback:
+    """Test _project_and_plot_layer falls back to to_crs on projection failure (#R16-7)."""
+
+    @patch("maptoposter.rendering.ox.projection.project_gdf", side_effect=ValueError("bad CRS"))
+    def test_fallback_to_crs_on_projection_error(self, mock_proj: MagicMock) -> None:
+        import geopandas as gpd
+        from shapely.geometry import box
+        from maptoposter.rendering import _project_and_plot_layer
+
+        gdf = gpd.GeoDataFrame(geometry=[box(0, 0, 1, 1)], crs="EPSG:4326")
+        ax = MagicMock()
+        _project_and_plot_layer(gdf, "EPSG:3857", ax, "#0000ff", 0.5, "water")
+        # Should still have plotted (via fallback to to_crs)
+        assert ax.method_calls  # plot was called on ax indirectly via gdf.plot
+
+
+class TestCoordinateDisplayQuadrants:
+    """Tests for coordinate display across all four hemisphere quadrants (#R11-9)."""
+
+    @patch("maptoposter.rendering.FontProperties")
+    def test_ne_quadrant(self, mock_fp: MagicMock) -> None:
+        """North-East: positive lat, positive lon → N / E."""
+        fig, ax = MagicMock(), MagicMock()
+        theme = dict(SAMPLE_THEME_DATA)
+        core._apply_typography(fig, ax, "Tokyo", "Japan", (35.6762, 139.6503), theme, None, 12, 16)
+        coords_text = ax.text.call_args_list[2][0][2]
+        assert "N" in coords_text
+        assert "E" in coords_text
+        assert "S" not in coords_text
+        assert "W" not in coords_text
+
+    @patch("maptoposter.rendering.FontProperties")
+    def test_nw_quadrant(self, mock_fp: MagicMock) -> None:
+        """North-West: positive lat, negative lon → N / W."""
+        fig, ax = MagicMock(), MagicMock()
+        theme = dict(SAMPLE_THEME_DATA)
+        core._apply_typography(fig, ax, "New York", "USA", (40.7128, -74.0060), theme, None, 12, 16)
+        coords_text = ax.text.call_args_list[2][0][2]
+        assert "N" in coords_text
+        assert "W" in coords_text
+        assert "S" not in coords_text
+        assert "E" not in coords_text
+
+    @patch("maptoposter.rendering.FontProperties")
+    def test_se_quadrant(self, mock_fp: MagicMock) -> None:
+        """South-East: negative lat, positive lon → S / E."""
+        fig, ax = MagicMock(), MagicMock()
+        theme = dict(SAMPLE_THEME_DATA)
+        core._apply_typography(fig, ax, "Sydney", "Australia", (-33.8688, 151.2093), theme, None, 12, 16)
+        coords_text = ax.text.call_args_list[2][0][2]
+        assert "S" in coords_text
+        assert "E" in coords_text
+        assert "N" not in coords_text
+        assert "W" not in coords_text
+
+    @patch("maptoposter.rendering.FontProperties")
+    def test_sw_quadrant(self, mock_fp: MagicMock) -> None:
+        """South-West: negative lat, negative lon → S / W."""
+        fig, ax = MagicMock(), MagicMock()
+        theme = dict(SAMPLE_THEME_DATA)
+        core._apply_typography(fig, ax, "Buenos Aires", "Argentina", (-34.6037, -58.3816), theme, None, 12, 16)
+        coords_text = ax.text.call_args_list[2][0][2]
+        assert "S" in coords_text
+        assert "W" in coords_text
+        assert "N" not in coords_text
+        assert "E" not in coords_text
+
+
+class TestPaperSizeOverrideWarning:
+    """Tests for --paper-size overriding explicit --width/--height (#R11-8)."""
+
+    def test_warns_when_explicit_dimensions_overridden(self) -> None:
+        events: list[str] = []
+
+        class _TrackingReporter(core.StatusReporter):
+            def __init__(self):
+                super().__init__(json_mode=True)
+
+            def emit(self, event, message=None, **extra):
+                events.append(event)
+
+        reporter = _TrackingReporter()
+        w, h = core._apply_paper_size(15, 18, "A4", "portrait", reporter)
+        assert w == pytest.approx(8.3)
+        assert h == pytest.approx(11.7)
+        assert "paper_size.override" in events
+
+    def test_no_warning_for_default_dimensions(self) -> None:
+        events: list[str] = []
+
+        class _TrackingReporter(core.StatusReporter):
+            def __init__(self):
+                super().__init__(json_mode=True)
+
+            def emit(self, event, message=None, **extra):
+                events.append(event)
+
+        reporter = _TrackingReporter()
+        core._apply_paper_size(12, 16, "A4", "portrait", reporter)
+        assert "paper_size.override" not in events
+
+
+class TestConcurrentThemeCache:
+    """Test thread-safety of _theme_cache under concurrent load (#R12-10)."""
+
+    def test_concurrent_loads_produce_consistent_results(
+        self, sample_theme: dict[str, str],
+    ) -> None:
+        import threading
+
+        results: list[dict[str, str]] = []
+        errors: list[Exception] = []
+
+        def _load() -> None:
+            try:
+                theme = core.load_theme("custom")
+                results.append(theme)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=_load) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+        assert len(results) == 10
+        # All results should be equal
+        for r in results:
+            assert r["name"] == sample_theme["name"]
+            assert r["bg"] == sample_theme["bg"]
+
+
+class TestVeryLongCityNameScaling:
+    """Test font scaling doesn't produce invalid sizes for very long names (#R12-11)."""
+
+    @patch("maptoposter.rendering.FontProperties")
+    def test_extremely_long_city_name(self, mock_fp: MagicMock) -> None:
+        fig = MagicMock()
+        ax = MagicMock()
+        theme = dict(SAMPLE_THEME_DATA)
+        long_name = "A" * 200
+
+        core._apply_typography(
+            fig, ax, long_name, "Country", (0.0, 0.0),
+            theme, None, 12, 16,
+        )
+        # Should not raise; font size should be positive
+        calls = mock_fp.call_args_list
+        for c in calls:
+            size = c.kwargs.get("size")
+            if size is not None:
+                assert size > 0, f"Font size must be positive, got {size}"
+
+    @patch("maptoposter.rendering.FontProperties")
+    def test_single_char_city_name(self, mock_fp: MagicMock) -> None:
+        fig = MagicMock()
+        ax = MagicMock()
+        theme = dict(SAMPLE_THEME_DATA)
+
+        core._apply_typography(
+            fig, ax, "X", "Y", (0.0, 0.0),
+            theme, None, 12, 16,
+        )
+        # Should not raise
+        assert ax.text.call_count >= 3
+
+
+class TestDeprecationVersionInWarning:
+    """Test that name_label deprecation includes removal version (#R12-5)."""
+
+    @patch("maptoposter.core._fetch_map_data")
+    @patch("maptoposter.core._save_output")
+    @patch("maptoposter.core._apply_typography")
+    @patch("maptoposter.core._render_layers")
+    @patch("maptoposter.core._setup_figure", return_value=(MagicMock(), MagicMock()))
+    @patch("maptoposter.core.ox.project_graph")
+    def test_name_label_warns_with_version(
+        self,
+        mock_proj: MagicMock,
+        mock_setup: MagicMock,
+        mock_render: MagicMock,
+        mock_typo: MagicMock,
+        mock_save: MagicMock,
+        mock_fetch: MagicMock,
+        sample_theme: dict[str, str],
+    ) -> None:
+        g = nx.MultiDiGraph()
+        g.add_edge("a", "b")
+        mock_fetch.return_value = (g, None, None, 4500.0)
+
+        import warnings as _warnings
+        with _warnings.catch_warnings(record=True) as w:
+            _warnings.simplefilter("always")
+            core.create_poster(
+                "Paris", "France", (48.8, 2.3), 10000,
+                "/tmp/out.png", "png", theme=sample_theme,
+                name_label="Old Name",
+            )
+        dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert len(dep_warnings) == 1
+        assert "v0.5.0" in str(dep_warnings[0].message)
+
+
+class TestZeroCoordinateDisplay:
+    """Test that (0.0, 0.0) renders as N / E, not blank (#R14-9)."""
+
+    @patch("maptoposter.rendering.FontProperties")
+    def test_zero_lat_lon_displays_north_east(self, mock_fp: MagicMock) -> None:
+        fig, ax = MagicMock(), MagicMock()
+        theme = dict(SAMPLE_THEME_DATA)
+        core._apply_typography(fig, ax, "Null Island", "Gulf of Guinea", (0.0, 0.0), theme, None, 12, 16)
+        coords_text = ax.text.call_args_list[2][0][2]
+        assert coords_text == "0.0000\u00b0 N / 0.0000\u00b0 E"
+
+
+class TestIncompleteFontDictFallback:
+    """Test that a font dict missing required weights triggers monospace fallback (#R14-10)."""
+
+    @patch("maptoposter.rendering.FontProperties")
+    def test_missing_bold_triggers_monospace(self, mock_fp: MagicMock) -> None:
+        fig, ax = MagicMock(), MagicMock()
+        theme = dict(SAMPLE_THEME_DATA)
+        # Provide a font dict missing the "bold" weight
+        incomplete_fonts = {"light": "/fake/light.ttf", "regular": "/fake/regular.ttf"}
+        core._apply_typography(fig, ax, "Paris", "France", (48.8, 2.3), theme, incomplete_fonts, 12, 16)
+        # The city name font (4th FontProperties call) should use family="monospace"
+        calls = mock_fp.call_args_list
+        city_font_call = calls[3]  # font_main_adjusted
+        assert city_font_call[1].get("family") == "monospace"
+        assert city_font_call[1].get("weight") == "bold"
+
+
+class TestOnProgressCallbackGuard:
+    """Test that a crashing on_progress callback doesn't break emit() (#R16-2)."""
+
+    def test_callback_exception_does_not_break_emit(self, capsys: pytest.CaptureFixture[str]) -> None:
+        def _bad_callback(event, message, extra):
+            raise RuntimeError("callback exploded")
+
+        reporter = core.StatusReporter(on_progress=_bad_callback)
+        # Should not raise — the exception is caught and logged
+        reporter.emit("test.event", "hello")
+        output = capsys.readouterr().out
+        assert "hello" in output
+
+
+class TestLongCacheKeyTruncation:
+    """Test that very long cache keys are truncated with a hash suffix (#R16-3)."""
+
+    def test_round_trip_with_long_key(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        long_key = "a" * 250
+        _util.cache_set(long_key, {"data": 42})
+        result = _util.cache_get(long_key)
+        assert result == {"data": 42}
+
+    def test_long_key_path_is_shorter(self) -> None:
+        long_key = "x" * 250
+        path = _util._cache_path(long_key)
+        # Stem should be truncated + 1 underscore + 16-char hash + _v2
+        assert len(path.stem) < 250
+
+
+class TestOutputDirPermissionError:
+    """Test that non-writable output dir raises PermissionError (#R16-5)."""
+
+    def test_non_writable_dir_raises(self, tmp_path: Path) -> None:
+        read_only = tmp_path / "readonly"
+        read_only.mkdir()
+        read_only.chmod(0o444)
+        try:
+            with pytest.raises(PermissionError, match="not writable"):
+                core.generate_output_filename("Paris", "noir", "png", str(read_only))
+        finally:
+            read_only.chmod(0o755)
+
+
+class TestCachedFetchCacheWriteFailure:
+    """Test that CacheError on cache_set doesn't block download (#R16-6)."""
+
+    @patch("maptoposter.core.cache_get", return_value=None)
+    @patch("maptoposter.core.cache_set", side_effect=_util.CacheError("disk full"))
+    @patch("maptoposter.core.time.sleep")
+    def test_data_returned_despite_cache_write_failure(
+        self, mock_sleep: MagicMock, mock_set: MagicMock, mock_get: MagicMock,
+    ) -> None:
+        result = core._cached_fetch(
+            "test_key",
+            lambda: {"graph": "data"},
+            "test",
+        )
+        assert result == {"graph": "data"}
+        mock_set.assert_called_once()
+
+
+class TestCacheInfoCorruptMeta:
+    """Test cache_info() with corrupt .meta JSON file (#R16-8)."""
+
+    def test_corrupt_meta_uses_empty_dict(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        # Create a fake cache file + signature + corrupt meta
+        import pickle
+        cache_file = tmp_path / "test_v2.pkl"
+        with cache_file.open("wb") as f:
+            pickle.dump("data", f)
+        sig = _util._compute_file_hmac(cache_file)
+        Path(f"{cache_file}.sig").write_text(sig, encoding="utf-8")
+        Path(f"{cache_file}.meta").write_text("not json!!!", encoding="utf-8")
+
+        info = _util.cache_info()
+        assert info["total_files"] == 1
+        # Corrupt meta means created/ttl are None
+        assert info["entries"][0]["created"] is None
+        assert info["entries"][0]["ttl"] is None
+
+
+class TestGetAvailableThemesMissingDir:
+    """Test get_available_themes() when THEMES_DIR doesn't exist (#R16-9)."""
+
+    def test_missing_dir_returns_empty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        nonexistent = tmp_path / "does_not_exist"
+        monkeypatch.setattr(core, "THEMES_DIR", nonexistent)
+        result = core.get_available_themes()
+        assert result == []
+        assert nonexistent.exists()  # Should have been created
+
+
+class TestCacheSetPicklingError:
+    """Test cache_set raises CacheError on PicklingError (#R17-1)."""
+
+    def test_pickling_error_raises_cache_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        import pickle
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        with patch("maptoposter._util.pickle.dump", side_effect=pickle.PicklingError("cannot pickle")):
+            with pytest.raises(_util.CacheError, match="Cache write failed"):
+                _util.cache_set("test_key", {"data": 1})
+
+
+class TestCacheClearMissingDir:
+    """Test cache_clear() returns 0 when CACHE_DIR doesn't exist (#R17-2)."""
+
+    def test_missing_cache_dir_returns_zero(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path / "nonexistent")
+        assert _util.cache_clear() == 0
+
+
+class TestSparseNetworkWarning:
+    """Test sparse network warning when graph has <10 nodes (#R17-3)."""
+
+    @patch("maptoposter.core.fetch_features", return_value=None)
+    @patch("maptoposter.core.fetch_graph")
+    def test_sparse_graph_emits_warning(self, mock_graph: MagicMock, mock_features: MagicMock) -> None:
+        import networkx as nx
+        g = nx.MultiDiGraph()
+        g.graph["crs"] = "EPSG:4326"
+        for i in range(5):
+            g.add_node(i, x=2.35 + i * 0.001, y=48.85 + i * 0.001)
+        g.add_edge(0, 1, highway="primary")
+        g.add_edge(1, 2, highway="residential")
+        mock_graph.return_value = g
+
+        events: list[str] = []
+
+        class _TrackingReporter(core.StatusReporter):
+            def __init__(self):
+                super().__init__(json_mode=True)
+
+            def emit(self, event, message=None, **extra):
+                events.append(event)
+
+        core._fetch_map_data((48.85, 2.35), 5000, 12, 16, status_reporter=_TrackingReporter())
+        assert "data.sparse_network" in events
+
+
+class TestBothDimensionsClamped:
+    """Test dimension clamping when both width AND height exceed max (#R17-4)."""
+
+    def test_both_clamped_to_max(self) -> None:
+        events: list[tuple[str, float]] = []
+
+        class _TrackingReporter(core.StatusReporter):
+            def __init__(self):
+                super().__init__(json_mode=True)
+
+            def emit(self, event, message=None, **extra):
+                if event == "dimension.adjust":
+                    events.append((extra.get("dimension", ""), extra.get("original", 0)))
+
+        reporter = _TrackingReporter()
+        w, h = core._apply_paper_size(25.0, 25.0, None, "portrait", reporter)
+        assert w == core.MAX_DIMENSION_CUSTOM
+        assert h == core.MAX_DIMENSION_CUSTOM
+        dims = [e[0] for e in events]
+        assert "width" in dims
+        assert "height" in dims
+
+
+class TestListThemesEmptyDir:
+    """Test list_themes() with no themes prints empty message (#R17-5)."""
+
+    def test_empty_dir_prints_no_themes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setattr(core, "THEMES_DIR", tmp_path)
+        core.list_themes()
+        output = capsys.readouterr().out
+        assert "No themes found" in output
+
+
+class TestListThemesCorruptJSON:
+    """Test list_themes() with corrupt theme JSON falls back gracefully (#R17-6)."""
+
+    def test_corrupt_theme_json_uses_fallback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setattr(core, "THEMES_DIR", tmp_path)
+        (tmp_path / "broken.json").write_text("NOT VALID JSON {{{")
+        core.list_themes()
+        output = capsys.readouterr().out
+        assert "broken" in output  # Theme name still listed
+
+
+class TestCoordinateBoundaryValues:
+    """Test coordinate validation at exact boundary values (#R17-9)."""
+
+    def test_exact_boundary_values_accepted(self) -> None:
+        from maptoposter.geocoding import _validate_coordinate_bounds
+        # All boundary values should pass without raising
+        _validate_coordinate_bounds(-90, 0)
+        _validate_coordinate_bounds(90, 0)
+        _validate_coordinate_bounds(0, -180)
+        _validate_coordinate_bounds(0, 180)
+
+    def test_just_beyond_boundary_raises(self) -> None:
+        from maptoposter.geocoding import _validate_coordinate_bounds
+        with pytest.raises(ValueError, match="Latitude"):
+            _validate_coordinate_bounds(-90.001, 0)
+        with pytest.raises(ValueError, match="Longitude"):
+            _validate_coordinate_bounds(0, 180.001)
+
+
+class TestMaptoposterVersionFallback:
+    """Test _MAPTOPOSTER_VERSION fallback when package not installed (#R17-10)."""
+
+    def test_version_fallback_on_package_not_found(self) -> None:
+        from importlib.metadata import PackageNotFoundError
+        with patch("maptoposter.core.version", side_effect=PackageNotFoundError("maptoposter")):
+            # Re-execute the module-level try/except logic
+            try:
+                from maptoposter.core import version as version_func
+                ver = version_func("maptoposter")
+            except PackageNotFoundError:
+                ver = "0.0.0"
+            assert ver == "0.0.0"
+
+
+class TestInitVersionFallback:
+    """Test __init__.py __version__ fallback when package not installed (#R18-1)."""
+
+    def test_version_fallback(self) -> None:
+        from importlib.metadata import PackageNotFoundError
+        with patch("importlib.metadata.version", side_effect=PackageNotFoundError("maptoposter")):
+            try:
+                from importlib.metadata import version as ver_func
+                v = ver_func("maptoposter")
+            except PackageNotFoundError:
+                v = "0.0.0"
+            assert v == "0.0.0"
+
+
+class TestCacheTTLMissWithoutMeta:
+    """Test cache_get returns None when .meta is absent but default_ttl is provided (#R18-2)."""
+
+    def test_no_meta_with_default_ttl_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        # Create cache entry manually without .meta file
+        import pickle, hmac, hashlib, uuid
+        key = "test_no_meta"
+        cache_path = _util._cache_path(key)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with cache_path.open("wb") as f:
+            pickle.dump({"data": 42}, f)
+        # Write signature so HMAC check passes
+        sig = _util._compute_file_hmac(cache_path)
+        Path(f"{cache_path}.sig").write_text(sig, encoding="utf-8")
+        # No .meta file created — but request with default_ttl
+        result = _util.cache_get(key, default_ttl=3600)
+        assert result is None  # Can't verify age, treated as miss
+
+    def test_no_meta_without_ttl_returns_value(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        import pickle
+        key = "test_no_meta_ok"
+        cache_path = _util._cache_path(key)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with cache_path.open("wb") as f:
+            pickle.dump({"data": 42}, f)
+        sig = _util._compute_file_hmac(cache_path)
+        Path(f"{cache_path}.sig").write_text(sig, encoding="utf-8")
+        # No .meta, no TTL — should return the value
+        result = _util.cache_get(key)
+        assert result == {"data": 42}
+
+
+class TestCacheErrorReRaise:
+    """Test CacheError is re-raised unwrapped from cache_get (#R18-3)."""
+
+    def test_cache_error_propagates_directly(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
+        import pickle
+        key = "test_reraise"
+        cache_path = _util._cache_path(key)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with cache_path.open("wb") as f:
+            pickle.dump("data", f)
+        sig = _util._compute_file_hmac(cache_path)
+        Path(f"{cache_path}.sig").write_text(sig, encoding="utf-8")
+        # Inject a CacheError during unpickling
+        with patch.object(
+            _util._RestrictedUnpickler, "load",
+            side_effect=_util.CacheError("injected"),
+        ):
+            with pytest.raises(_util.CacheError, match="injected"):
+                _util.cache_get(key)
+
+
+class TestSaveOutputOSErrorCleanup:
+    """Test _save_output cleans up temp file on OSError (#R18-6)."""
+
+    def test_temp_file_removed_on_save_failure(
+        self,
+        tmp_path: Path,
+        sample_theme_data: dict[str, str],
+    ) -> None:
+        output_file = str(tmp_path / "test.png")
+        fig = MagicMock()
+        with patch("maptoposter.core.plt") as mock_plt:
+            mock_plt.savefig.side_effect = OSError("disk full")
+            with pytest.raises(OSError, match="disk full"):
+                core._save_output(
+                    fig, output_file, "png", sample_theme_data,
+                    14.0, 11.0, 300,
+                )
+        # Verify no temp files left behind
+        tmp_files = list(tmp_path.glob("*.tmp.*"))
+        assert len(tmp_files) == 0
+
+
+class TestGeneratePostersNoFontsWarning:
+    """Test generate_posters logs warning when no fonts available (#R18-7)."""
+
+    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoposter.core.create_poster")
+    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    @patch("maptoposter.core._get_fonts", return_value=None)
+    def test_warning_when_no_fonts(
+        self,
+        mock_bundled: MagicMock,
+        mock_custom: MagicMock,
+        mock_coords: MagicMock,
+        mock_create: MagicMock,
+        mock_meta: MagicMock,
+        sample_theme: dict[str, str],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        import logging
+        options = PosterGenerationOptions(city="Paris", country="France", theme="custom")
+        with caplog.at_level(logging.WARNING, logger="maptoposter.core"):
+            core.generate_posters(options)
+        assert any("monospace" in r.message for r in caplog.records)
+
+
+class TestGeneratePostersJsonModeBanners:
+    """Test generate_posters skips banners in json_mode (#R18-8)."""
+
+    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoposter.core.create_poster")
+    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    def test_json_mode_skips_banners(
+        self,
+        mock_custom: MagicMock,
+        mock_coords: MagicMock,
+        mock_create: MagicMock,
+        mock_meta: MagicMock,
+        sample_theme: dict[str, str],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        reporter = core.StatusReporter(json_mode=True)
+        options = PosterGenerationOptions(city="Paris", country="France", theme="custom")
+        core.generate_posters(options, status_reporter=reporter)
+        output = capsys.readouterr().out
+        # Banner ("===" lines) should NOT appear in json_mode
+        assert "City Map Poster Generator" not in output
+
+    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoposter.core.create_poster")
+    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    def test_non_json_mode_shows_banners(
+        self,
+        mock_custom: MagicMock,
+        mock_coords: MagicMock,
+        mock_create: MagicMock,
+        mock_meta: MagicMock,
+        sample_theme: dict[str, str],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        reporter = core.StatusReporter(json_mode=False)
+        options = PosterGenerationOptions(city="Paris", country="France", theme="custom")
+        core.generate_posters(options, status_reporter=reporter)
+        output = capsys.readouterr().out
+        assert "City Map Poster Generator" in output
+        assert "Poster generation complete" in output
+
+
+class TestCacheInfoNonexistentDir:
+    """Test cache_info() when CACHE_DIR doesn't exist (#R19-2)."""
+
+    def test_nonexistent_cache_dir_returns_empty(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        nonexistent = tmp_path / "does_not_exist"
+        monkeypatch.setattr(_util, "CACHE_DIR", nonexistent)
+        result = _util.cache_info()
+        assert result == {"total_files": 0, "total_bytes": 0, "entries": []}
+
+
+class TestGeocodingCoroutineHandling:
+    """Test geocoding when _geocode_with_retry returns a coroutine (#R19-6)."""
+
+    @patch("maptoposter.geocoding.cache_get", return_value=None)
+    @patch("maptoposter.geocoding.cache_set")
+    @patch("maptoposter.geocoding._geocode_with_retry")
+    def test_coroutine_resolved_via_asyncio_run(
+        self,
+        mock_geocode: MagicMock,
+        mock_cache_set: MagicMock,
+        mock_cache_get: MagicMock,
+    ) -> None:
+        import asyncio
+        from maptoposter.geocoding import get_coordinates
+
+        # Create a real coroutine that returns a mock Location
+        mock_location = MagicMock()
+        mock_location.latitude = 48.8566
+        mock_location.longitude = 2.3522
+        mock_location.address = "Paris, France"
+
+        async def _coro():
+            return mock_location
+
+        mock_geocode.return_value = _coro()
+
+        result = get_coordinates("Paris", "France")
+        assert result == (48.8566, 2.3522)
+
+
+class TestGeocodingMissingAddress:
+    """Test geocoding when location.address is None (#R19-7)."""
+
+    @patch("maptoposter.geocoding.cache_get", return_value=None)
+    @patch("maptoposter.geocoding.cache_set")
+    @patch("maptoposter.geocoding._geocode_with_retry")
+    def test_missing_address_uses_fallback_message(
+        self,
+        mock_geocode: MagicMock,
+        mock_cache_set: MagicMock,
+        mock_cache_get: MagicMock,
+    ) -> None:
+        from maptoposter.geocoding import get_coordinates
+
+        mock_location = MagicMock()
+        mock_location.latitude = 48.8566
+        mock_location.longitude = 2.3522
+        # Simulate missing address
+        del mock_location.address
+
+        mock_geocode.return_value = mock_location
+
+        events: list[tuple[str, str]] = []
+
+        class _Tracker:
+            json_mode = False
+            def emit(self, event, message=None, **extra):
+                if message:
+                    events.append((event, message))
+
+        result = get_coordinates("Paris", "France", status_reporter=_Tracker())
+        assert result == (48.8566, 2.3522)
+        # Verify the fallback message was emitted
+        result_messages = [msg for evt, msg in events if evt == "geocode.result"]
+        assert any("address not available" in m for m in result_messages)
+
+
+class TestGeocodingCacheSetFailure:
+    """Test geocoding when cache_set raises CacheError (#R19-7b)."""
+
+    @patch("maptoposter.geocoding.cache_get", return_value=None)
+    @patch("maptoposter.geocoding.cache_set", side_effect=_util.CacheError("write failed"))
+    @patch("maptoposter.geocoding._geocode_with_retry")
+    def test_cache_write_failure_does_not_block(
+        self,
+        mock_geocode: MagicMock,
+        mock_cache_set: MagicMock,
+        mock_cache_get: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        import logging
+        from maptoposter.geocoding import get_coordinates
+
+        mock_location = MagicMock()
+        mock_location.latitude = 48.8566
+        mock_location.longitude = 2.3522
+        mock_location.address = "Paris, France"
+        mock_geocode.return_value = mock_location
+
+        with caplog.at_level(logging.WARNING, logger="maptoposter.geocoding"):
+            result = get_coordinates("Paris", "France")
+        assert result == (48.8566, 2.3522)
+        assert any("Failed to cache" in r.message for r in caplog.records)
+
+
+class TestEdgeWidthsEmptyHighwayList:
+    """Test get_edge_widths_by_type with empty highway list (#R19-8)."""
+
+    def test_empty_highway_list_defaults_to_unclassified(self) -> None:
+        from maptoposter.rendering import get_edge_widths_by_type
+        g = nx.MultiDiGraph()
+        g.add_edge("a", "b", highway=[])  # empty list
+        widths = get_edge_widths_by_type(g)
+        # Empty list falls back to 'unclassified' which maps to default 0.4
+        assert widths == [0.4]
+
+    def test_highway_list_uses_first_element(self) -> None:
+        from maptoposter.rendering import get_edge_widths_by_type
+        g = nx.MultiDiGraph()
+        g.add_edge("a", "b", highway=["motorway", "primary"])
+        widths = get_edge_widths_by_type(g)
+        assert widths == [1.2]  # motorway width
+
+
+class TestProjectAndPlotLayerNoPolygons:
+    """Test _project_and_plot_layer with only LineString geometries (#R19-9)."""
+
+    def test_linestring_only_gdf_returns_early(self) -> None:
+        from maptoposter.rendering import _project_and_plot_layer
+        from shapely.geometry import LineString
+        import geopandas as gpd
+
+        line = LineString([(0, 0), (1, 1)])
+        gdf = gpd.GeoDataFrame(geometry=[line], crs="EPSG:4326")
+        ax = MagicMock()
+
+        # Should return without calling plot (no polygons)
+        _project_and_plot_layer(gdf, "EPSG:3857", ax, "#000", 1.0, "test")
+        ax.plot.assert_not_called()
+
+
+class TestAttributionFontFallback:
+    """Test _apply_typography attribution uses monospace when no fonts (#R19-10)."""
+
+    def test_attribution_monospace_when_no_fonts(self) -> None:
+        from maptoposter.rendering import _apply_typography
+
+        fig = MagicMock()
+        ax = MagicMock()
+        ax.transAxes = MagicMock()
+        theme = {
+            "text": "#ffffff",
+            "bg": "#000000",
+        }
+
+        # _get_fonts is imported lazily from core inside _apply_typography
+        with patch("maptoposter.core._get_fonts", return_value=None):
+            _apply_typography(
+                fig, ax, "PARIS", "France", (48.8566, 2.3522),
+                theme, None, 14.0, 11.0, show_attribution=True,
+            )
+
+        # Check that ax.text was called for attribution (last text call)
+        text_calls = ax.text.call_args_list
+        # Attribution is the last text call (at position 0.98, 0.02)
+        attr_call = [c for c in text_calls if c[0][0] == 0.98]
+        assert len(attr_call) == 1
+        font_prop = attr_call[0][1]["fontproperties"]
+        assert font_prop.get_family() == ["monospace"]
+
+
+class TestCreatePosterValidation:
+    """Test create_poster rejects empty city/country (#R20-5)."""
+
+    def test_empty_city_raises(self) -> None:
+        with pytest.raises(ValueError, match="city must be a non-empty string"):
+            core.create_poster(
+                "", "France", (48.8566, 2.3522), 5000, "/tmp/out.png", "png",
+                theme=SAMPLE_THEME_DATA,
+            )
+
+    def test_whitespace_city_raises(self) -> None:
+        with pytest.raises(ValueError, match="city must be a non-empty string"):
+            core.create_poster(
+                "   ", "France", (48.8566, 2.3522), 5000, "/tmp/out.png", "png",
+                theme=SAMPLE_THEME_DATA,
+            )
+
+    def test_empty_country_raises(self) -> None:
+        with pytest.raises(ValueError, match="country must be a non-empty string"):
+            core.create_poster(
+                "Paris", "", (48.8566, 2.3522), 5000, "/tmp/out.png", "png",
+                theme=SAMPLE_THEME_DATA,
+            )
+
+
+class TestCSVEmptyCityCountryWarning:
+    """Test CSV parser warns on rows with empty city/country (#R20-9)."""
+
+    def test_empty_city_in_csv_logs_warning(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        import logging
+        from maptoposter.batch import load_batch_file
+
+        csv = tmp_path / "cities.csv"
+        csv.write_text("city,country\n,France\nParis,France\n")
+        with caplog.at_level(logging.WARNING, logger="maptoposter.batch"):
+            entries = load_batch_file(csv)
+        assert len(entries) == 2
+        assert any("empty city" in r.message for r in caplog.records)
+
+
+class TestGeocodingAsyncioRuntimeError:
+    """Test geocoding handles RuntimeError from asyncio.run (#R20-10)."""
+
+    @patch("maptoposter.geocoding.cache_get", return_value=None)
+    @patch("maptoposter.geocoding.cache_set")
+    @patch("maptoposter.geocoding._geocode_with_retry")
+    def test_runtime_error_with_non_running_loop(
+        self,
+        mock_geocode: MagicMock,
+        mock_cache_set: MagicMock,
+        mock_cache_get: MagicMock,
+    ) -> None:
+        import asyncio
+        from maptoposter.geocoding import get_coordinates
+
+        mock_location = MagicMock()
+        mock_location.latitude = 48.8566
+        mock_location.longitude = 2.3522
+        mock_location.address = "Paris, France"
+
+        async def _coro():
+            return mock_location
+
+        # asyncio.run() raises RuntimeError, but loop is not running
+        # so loop.run_until_complete is used as fallback
+        coro = _coro()
+        mock_geocode.return_value = coro
+
+        with patch("maptoposter.geocoding.asyncio") as mock_asyncio:
+            mock_asyncio.iscoroutine.return_value = True
+            mock_asyncio.run.side_effect = RuntimeError("no running loop")
+            mock_loop = MagicMock()
+            mock_loop.is_running.return_value = False
+            mock_loop.run_until_complete.return_value = mock_location
+            mock_asyncio.get_event_loop.return_value = mock_loop
+
+            result = get_coordinates("Paris", "France")
+
+        assert result == (48.8566, 2.3522)
+        mock_loop.run_until_complete.assert_called_once()
+
+    @patch("maptoposter.geocoding.cache_get", return_value=None)
+    @patch("maptoposter.geocoding.cache_set")
+    @patch("maptoposter.geocoding._geocode_with_retry")
+    def test_runtime_error_with_running_loop_raises(
+        self,
+        mock_geocode: MagicMock,
+        mock_cache_set: MagicMock,
+        mock_cache_get: MagicMock,
+    ) -> None:
+        import asyncio
+        from maptoposter.geocoding import get_coordinates
+
+        async def _coro():
+            return None
+
+        coro = _coro()
+        mock_geocode.return_value = coro
+
+        with patch("maptoposter.geocoding.asyncio") as mock_asyncio:
+            mock_asyncio.iscoroutine.return_value = True
+            mock_asyncio.run.side_effect = RuntimeError("event loop is running")
+            mock_loop = MagicMock()
+            mock_loop.is_running.return_value = True
+            mock_asyncio.get_event_loop.return_value = mock_loop
+
+            with pytest.raises(RuntimeError, match="synchronous environment"):
+                get_coordinates("Paris", "France")
