@@ -415,22 +415,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.latitude = _parse_coordinates(args.latitude)
     args.longitude = _parse_coordinates(args.longitude)
 
-    try:
-        options = _build_options_from_sources(parser, args)
-    except (ValueError, FileNotFoundError) as exc:
-        print(f"✗ {exc}\n")
-        if not args.config:
-            print_examples()
-        return 1
-
-    if getattr(args, "dry_run", False):
-        return _handle_dry_run(options)
-
     reporter = StatusReporter(
         json_mode=args.log_format == "json",
         debug=getattr(args, "debug", False),
     )
 
+    # Batch mode does not require --city/--country; handle before option parsing
     if getattr(args, "batch", None):
         from .batch import run_batch
         overrides = _collect_cli_overrides(parser, args)
@@ -442,7 +432,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             status_reporter=reporter,
             dry_run=getattr(args, "dry_run", False),
         )
+        gallery_outputs = result.get("successes", [])
+        if getattr(args, "gallery", False) and gallery_outputs:
+            from .gallery import generate_gallery
+            output_dir = str(Path(gallery_outputs[0]).parent) if gallery_outputs else "posters"
+            gallery_path = generate_gallery(output_dir)
+            print(f"Gallery: {gallery_path}")
         return 1 if result["failures"] else 0
+
+    try:
+        options = _build_options_from_sources(parser, args)
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"✗ {exc}\n")
+        if not args.config:
+            print_examples()
+        return 1
+
+    if getattr(args, "dry_run", False):
+        return _handle_dry_run(options)
 
     try:
         outputs = generate_posters(options, status_reporter=reporter)

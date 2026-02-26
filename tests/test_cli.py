@@ -381,6 +381,24 @@ class TestGalleryFlag:
         output = capsys.readouterr().out
         assert "Gallery" in output
 
+    @patch("maptoposter.gallery.generate_gallery", return_value="/tmp/gallery.html")
+    @patch("maptoposter.batch.run_batch", return_value={"successes": ["/tmp/london.png"], "failures": []})
+    def test_batch_gallery_flag(
+        self,
+        mock_batch: MagicMock,
+        mock_gallery: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+    ) -> None:
+        csv_file = tmp_path / "cities.csv"
+        csv_file.write_text("city,country\nLondon,UK\n")
+        result = cli.main(["--batch", str(csv_file), "--gallery"])
+        assert result == 0
+        mock_batch.assert_called_once()
+        mock_gallery.assert_called_once()
+        output = capsys.readouterr().out
+        assert "Gallery" in output
+
     @patch("maptoposter.cli.generate_posters", return_value=["/tmp/paris_custom.png"])
     @patch("maptoposter.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
     def test_no_gallery_flag_skips_gallery(
