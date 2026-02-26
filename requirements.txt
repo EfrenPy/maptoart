@@ -114,6 +114,8 @@ six==1.17.0
     # via
     #   maptoposter (pyproject.toml)
     #   python-dateutil
+tenacity==8.2.3
+    # via maptoposter (pyproject.toml)
 tqdm==4.67.1
     # via maptoposter (pyproject.toml)
 tzdata==2025.3
