@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-02-26
+
+### Fixed
+- `--batch` no longer requires `--city`/`--country` flags
+- `--gallery` now works with batch mode output
+
+### Changed
+- CLI `--help` reorganized into logical groups (map & layout, output, multilingual, batch & gallery, utilities)
+- All argument help texts expanded with defaults, limits, and usage tips
+- Epilog includes quick start, multilingual, batch, config, paper/DPI/distance guides, env vars, and theme list
+
+---
+
 ## [0.4.1] - 2026-02-26
 
 ### Fixed
