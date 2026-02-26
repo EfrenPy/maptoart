@@ -1,21 +1,40 @@
-"""Core orchestration for the City Map Poster Generator."""
+"""Core orchestration for the City Map Poster Generator.
 
-import hashlib
-import hmac
+Environment variables
+---------------------
+MAPTOPOSTER_THEMES_DIR
+    Custom themes directory (overrides bundled themes).
+MAPTOPOSTER_OUTPUT_DIR
+    Default output directory for generated posters.
+MAPTOPOSTER_CACHE_DIR
+    OSM data cache directory.  Falls back to ``CACHE_DIR`` (legacy) then ``cache/``.
+MAPTOPOSTER_FONTS_DIR
+    Directory for bundled font files (default: package ``fonts/``).
+MAPTOPOSTER_FONTS_CACHE
+    Download cache for Google Fonts files (default: ``~/.cache/maptoposter/fonts``).
+MAPTOPOSTER_NOMINATIM_DELAY
+    Rate-limit delay (seconds) before each Nominatim request (default: ``1``).
+    Set to ``0`` for private Nominatim instances.
+"""
+
+import difflib
+import functools
 import json
 import logging
+import math
 import os
-import pickle
 import re
 import tempfile
 import threading
 import time
-import uuid
+import warnings
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any, Sequence, cast
+from typing import Any, Sequence, TypeVar, cast
 
 import matplotlib.pyplot as plt
 import osmnx as ox
@@ -27,7 +46,24 @@ from tqdm import tqdm
 from .font_management import load_fonts
 
 # Re-exports from _util (backward compat)
-from ._util import CacheError, StatusReporter, _emit_status  # noqa: F401
+from ._util import (  # noqa: F401
+    CacheError,
+    PermanentFetchError,
+    StatusReporter,
+    TransientFetchError,
+    _emit_status,
+    CACHE_DIR,
+    _CACHE_VERSION,
+    _CACHE_TTL_COORDS,
+    _CACHE_TTL_DATA,
+    _cache_path,
+    _cache_hmac_key,
+    _compute_file_hmac,
+    cache_get,
+    cache_set,
+    cache_clear,
+    cache_info,
+)
 
 # Re-exports from geocoding (backward compat)
 from .geocoding import (  # noqa: F401
@@ -55,13 +91,9 @@ from .rendering import (  # noqa: F401
 
 try:
     _MAPTOPOSTER_VERSION = version("maptoposter")
-except PackageNotFoundError:
+except PackageNotFoundError:  # pragma: no cover
     _MAPTOPOSTER_VERSION = "0.0.0"
 
-
-CACHE_DIR_PATH = os.environ.get("MAPTOPOSTER_CACHE_DIR", os.environ.get("CACHE_DIR", "cache"))
-CACHE_DIR = Path(CACHE_DIR_PATH)
-_CACHE_VERSION = "v2"
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_THEMES_DIR = PACKAGE_DIR / "themes"
@@ -82,6 +114,7 @@ FILE_ENCODING = "utf-8"
 
 MAX_DIMENSION_CUSTOM = 20.0
 MAX_DIMENSION_PAPER = 50.0
+MAX_VECTOR_DPI = 300
 DEFAULT_THEME = "terracotta"
 
 _TERRACOTTA_DEFAULTS: dict[str, str] = {
@@ -102,6 +135,10 @@ _TERRACOTTA_DEFAULTS: dict[str, str] = {
 
 REQUIRED_THEME_KEYS: frozenset[str] = frozenset(_TERRACOTTA_DEFAULTS.keys())
 
+# Thread-safe theme cache: _theme_cache stores loaded theme dicts and is
+# guarded by _theme_cache_lock.  The lock is acquired for both reads and
+# writes so that concurrent calls to load_theme() in _fetch_map_data's
+# thread pool don't race on dict mutation.
 _theme_cache: dict[str, dict[str, str]] = {}
 _theme_cache_lock = threading.Lock()
 
@@ -113,22 +150,13 @@ _THEME_COLOR_KEYS: frozenset[str] = frozenset({
 
 _HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 _THEME_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+_CITY_SLUG_RE = re.compile(r"[^\w\-]")
 
 
-class _Sentinel:
-    """Marker for unloaded state."""
-
-
-_UNLOADED = _Sentinel()
-_FONTS: dict[str, str] | None | _Sentinel = _UNLOADED
-
-
+@functools.lru_cache(maxsize=1)
 def _get_fonts() -> dict[str, str] | None:
     """Lazy-load bundled fonts on first access."""
-    global _FONTS
-    if isinstance(_FONTS, _Sentinel):
-        _FONTS = load_fonts()
-    return _FONTS
+    return load_fonts()
 
 
 _logger = logging.getLogger(__name__)
@@ -160,6 +188,10 @@ class PosterGenerationOptions:
     output_dir: str | None = None
 
     def __post_init__(self) -> None:
+        if not self.city or not self.city.strip():
+            raise ValueError("city must not be empty")
+        if not self.country or not self.country.strip():
+            raise ValueError("country must not be empty")
         if self.distance <= 0:
             raise ValueError(f"distance must be positive, got {self.distance}")
         if self.distance > 100_000:
@@ -172,9 +204,19 @@ class PosterGenerationOptions:
             raise ValueError(f"height must be positive, got {self.height}")
         if self.dpi < 72:
             raise ValueError(f"dpi must be at least 72, got {self.dpi}")
+        if self.dpi > 2400:
+            raise ValueError(f"dpi must not exceed 2400, got {self.dpi}")
         if self.output_format not in {"png", "svg", "pdf"}:
             raise ValueError(
                 f"output_format must be one of 'png', 'svg', 'pdf', got '{self.output_format}'"
+            )
+        if self.orientation not in ("portrait", "landscape"):
+            raise ValueError(
+                f"orientation must be 'portrait' or 'landscape', got '{self.orientation}'"
+            )
+        if self.paper_size is not None and self.paper_size not in PAPER_SIZES:
+            raise ValueError(
+                f"paper_size must be one of {sorted(PAPER_SIZES.keys())} or None, got '{self.paper_size}'"
             )
 
 
@@ -194,9 +236,21 @@ def _apply_paper_size(
             raise ValueError(f"Unknown paper size '{paper_size}'")
         base_width, base_height = preset
         if orientation == "landscape":
-            width, height = base_height, base_width
+            new_w, new_h = base_height, base_width
         else:
-            width, height = base_width, base_height
+            new_w, new_h = base_width, base_height
+        # Warn if explicit dimensions are being overridden
+        defaults = (12.0, 16.0)
+        if (width, height) != defaults and (width != new_w or height != new_h):
+            _emit_status(
+                status_reporter,
+                "paper_size.override",
+                f"\u26a0 --paper-size {paper_size} overrides explicit --width {width} / --height {height}",
+                paper_size=paper_size,
+                original_width=width,
+                original_height=height,
+            )
+        width, height = new_w, new_h
         _emit_status(
             status_reporter,
             "paper_size",
@@ -269,7 +323,17 @@ def _resolve_theme_names(options: PosterGenerationOptions, available: Sequence[s
             )
     missing = [theme for theme in requested if theme not in available]
     if missing:
-        raise ValueError(f"Theme(s) not found: {', '.join(missing)}. Available themes: {', '.join(available)}")
+        suggestions = []
+        for name in missing:
+            matches = difflib.get_close_matches(name, available, n=3, cutoff=0.6)
+            if matches:
+                suggestions.append(f"'{name}' — did you mean: {', '.join(repr(m) for m in matches)}?")
+            else:
+                suggestions.append(f"'{name}'")
+        msg = "Theme(s) not found: " + "; ".join(suggestions)
+        if not any("did you mean" in s for s in suggestions):
+            msg += f". Available: {', '.join(sorted(available))}"
+        raise ValueError(msg)
     return requested
 
 
@@ -297,100 +361,10 @@ def _load_custom_fonts(
     return fonts
 
 
-def _cache_path(key: str) -> str:
-    """
-    Generate a safe cache file path from a cache key.
+def is_latin_script(text: str) -> bool:
+    """Check if text is primarily Latin script.
 
-    Args:
-        key: Cache key identifier
-
-    Returns:
-        Path to cache file with .pkl extension
-    """
-    safe = key.replace(os.sep, "_")
-    return os.path.join(CACHE_DIR, f"{safe}_{_CACHE_VERSION}.pkl")
-
-
-def _cache_hmac_key() -> bytes:
-    """Machine-local HMAC key derived from MAC address."""
-    return uuid.getnode().to_bytes(8, "big")
-
-
-def _compute_file_hmac(path: str) -> str:
-    """Compute HMAC-SHA256 hex digest for a file."""
-    h = hmac.new(_cache_hmac_key(), digestmod=hashlib.sha256)
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def cache_get(key: str):
-    """
-    Retrieve a cached object by key.
-
-    Args:
-        key: Cache key identifier
-
-    Returns:
-        Cached object if found, None otherwise
-
-    Raises:
-        CacheError: If cache read operation fails
-    """
-    try:
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        path = _cache_path(key)
-        if not os.path.exists(path):
-            return None
-        sig_path = f"{path}.sig"
-        if os.path.exists(sig_path):
-            expected = Path(sig_path).read_text(encoding="utf-8").strip()
-            actual = _compute_file_hmac(path)
-            if not hmac.compare_digest(expected, actual):
-                _logger.warning("Cache HMAC mismatch for '%s', treating as miss", key)
-                return None
-        else:
-            _logger.warning("Cache signature missing for '%s', treating as miss", key)
-            return None
-        with open(path, "rb") as f:
-            return pickle.load(f)
-    except Exception as e:
-        raise CacheError(f"Cache read failed: {e}") from e
-
-
-def cache_set(key: str, value):
-    """
-    Store an object in the cache.
-
-    Args:
-        key: Cache key identifier
-        value: Object to cache (must be picklable)
-
-    Raises:
-        CacheError: If cache write operation fails
-    """
-    try:
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        path = _cache_path(key)
-        with open(path, "wb") as f:
-            pickle.dump(value, f, protocol=pickle.HIGHEST_PROTOCOL)
-        sig = _compute_file_hmac(path)
-        Path(f"{path}.sig").write_text(sig, encoding="utf-8")
-    except Exception as e:
-        raise CacheError(f"Cache write failed: {e}") from e
-
-
-# Font loading now handled by font_management.py module
-
-
-def is_latin_script(text):
-    """
-    Check if text is primarily Latin script.
     Used to determine if letter-spacing should be applied to city names.
-
-    :param text: Text to analyze
-    :return: True if text is primarily Latin script, False otherwise
     """
     if not text:
         return True
@@ -427,20 +401,33 @@ def generate_output_filename(
 
     resolved_dir = Path(output_dir).resolve()
     resolved_dir.mkdir(parents=True, exist_ok=True)
+    # Verify the directory is writable before proceeding
+    if not os.access(resolved_dir, os.W_OK):
+        raise PermissionError(f"Output directory is not writable: {resolved_dir}")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    city_slug = re.sub(r"[^\w\-]", "_", city.lower()).strip("_")
+    city_slug = _CITY_SLUG_RE.sub("_", city.lower()).strip("_")
     ext = output_format.lower()
     filename = f"{city_slug}_{theme_name}_{timestamp}.{ext}"
     return str(resolved_dir / filename)
 
 
 def get_available_themes() -> list[str]:
-    """Return available theme names from the configured directory."""
+    """Return available theme names from the configured directory.
 
+    Results are cached based on the directory's modification time to avoid
+    repeated filesystem scans.
+    """
     if not THEMES_DIR.exists():
         THEMES_DIR.mkdir(parents=True, exist_ok=True)
         return []
 
+    mtime = THEMES_DIR.stat().st_mtime
+    return _get_available_themes_cached(mtime)
+
+
+@functools.lru_cache(maxsize=1)
+def _get_available_themes_cached(_mtime: float) -> list[str]:
+    """Filesystem scan gated by directory mtime for cache invalidation."""
     return sorted(p.stem for p in THEMES_DIR.glob("*.json"))
 
 
@@ -496,11 +483,74 @@ def load_theme(
         description=description,
     )
     if not status_reporter and description:
-        print(f"  {description}")
+        _emit_status(status_reporter, "theme.description", f"  {description}")
 
     with _theme_cache_lock:
         _theme_cache[theme_name] = dict(theme)
     return theme
+
+
+_T = TypeVar("_T")
+
+
+def _cached_fetch(
+    cache_key: str,
+    fetcher: Callable[[], _T],
+    name: str,
+    *,
+    status_reporter: StatusReporter | None = None,
+    rate_limit: float = 0.3,
+    **event_kwargs: Any,
+) -> _T | None:
+    """Shared cache-check → download → cache-set → error-handling pattern."""
+    cached = cache_get(cache_key)
+    if cached is not None:
+        _emit_status(
+            status_reporter,
+            f"{name}.cache_hit",
+            f"✓ Using cached {name}",
+            **event_kwargs,
+        )
+        return cast(_T, cached)
+
+    try:
+        _emit_status(
+            status_reporter,
+            f"{name}.download",
+            f"Downloading {name}",
+            **event_kwargs,
+        )
+        result = fetcher()
+        time.sleep(rate_limit)
+        try:
+            cache_set(cache_key, result, ttl=_CACHE_TTL_DATA)
+        except CacheError as e:
+            _logger.warning("Failed to cache %s: %s", name, e)
+        _emit_status(
+            status_reporter,
+            f"{name}.download.complete",
+            f"✓ {name.capitalize()} downloaded",
+            **event_kwargs,
+        )
+        return result
+    except (ConnectionError, ResponseStatusCodeError) as e:
+        _emit_status(
+            status_reporter,
+            f"{name}.download.error",
+            f"OSMnx error while fetching {name}: {e}",
+            error_type="transient",
+            **event_kwargs,
+        )
+        return None
+    except (InsufficientResponseError, ValueError) as e:
+        _emit_status(
+            status_reporter,
+            f"{name}.download.error",
+            f"OSMnx error while fetching {name}: {e}",
+            error_type="permanent",
+            **event_kwargs,
+        )
+        return None
 
 
 def fetch_graph(
@@ -523,46 +573,15 @@ def fetch_graph(
         MultiDiGraph of street network, or None if fetch fails
     """
     lat, lon = point
-    graph = f"graph_{lat}_{lon}_{dist}"
-    cached = cache_get(graph)
-    if cached is not None:
-        _emit_status(
-            status_reporter,
-            "graph.cache_hit",
-            "✓ Using cached street network",
-            distance=dist,
-        )
-        return cast(MultiDiGraph, cached)
-
-    try:
-        _emit_status(
-            status_reporter,
-            "graph.download",
-            "Downloading street network",
-            distance=dist,
-        )
-        g = ox.graph_from_point(point, dist=dist, dist_type='bbox', network_type='all', truncate_by_edge=True)
-        # Rate limit between requests
-        time.sleep(0.5)
-        try:
-            cache_set(graph, g)
-        except CacheError as e:
-            _logger.warning("Failed to cache graph: %s", e)
-        _emit_status(
-            status_reporter,
-            "graph.download.complete",
-            "✓ Street network downloaded",
-            distance=dist,
-        )
-        return g
-    except (InsufficientResponseError, ResponseStatusCodeError, ValueError, ConnectionError) as e:
-        _emit_status(
-            status_reporter,
-            "graph.download.error",
-            f"OSMnx error while fetching graph: {e}",
-            distance=dist,
-        )
-        return None
+    key = f"graph_{lat}_{lon}_{dist}"
+    return _cached_fetch(
+        key,
+        lambda: ox.graph_from_point(point, dist=dist, dist_type='bbox', network_type='all', truncate_by_edge=True),
+        "graph",
+        status_reporter=status_reporter,
+        rate_limit=0.5,
+        distance=dist,
+    )
 
 
 def fetch_features(
@@ -590,46 +609,14 @@ def fetch_features(
     """
     lat, lon = point
     tag_str = "_".join(tags.keys())
-    features = f"{name}_{lat}_{lon}_{dist}_{tag_str}"
-    cached = cache_get(features)
-    if cached is not None:
-        _emit_status(
-            status_reporter,
-            f"{name}.cache_hit",
-            f"✓ Using cached {name}",
-            distance=dist,
-        )
-        return cast(GeoDataFrame, cached)
-
-    try:
-        _emit_status(
-            status_reporter,
-            f"{name}.download",
-            f"Downloading {name}",
-            distance=dist,
-        )
-        data = ox.features_from_point(point, tags=tags, dist=dist)
-        # Rate limit between requests
-        time.sleep(0.3)
-        try:
-            cache_set(features, data)
-        except CacheError as e:
-            _logger.warning("Failed to cache %s: %s", name, e)
-        _emit_status(
-            status_reporter,
-            f"{name}.download.complete",
-            f"✓ {name.capitalize()} downloaded",
-            distance=dist,
-        )
-        return data
-    except (InsufficientResponseError, ResponseStatusCodeError, ValueError, ConnectionError) as e:
-        _emit_status(
-            status_reporter,
-            f"{name}.download.error",
-            f"OSMnx error while fetching {name}: {e}",
-            distance=dist,
-        )
-        return None
+    key = f"{name}_{lat}_{lon}_{dist}_{tag_str}"
+    return _cached_fetch(
+        key,
+        lambda: ox.features_from_point(point, tags=tags, dist=dist),
+        name,
+        status_reporter=status_reporter,
+        distance=dist,
+    )
 
 
 def _fetch_map_data(
@@ -640,55 +627,83 @@ def _fetch_map_data(
     *,
     status_reporter: StatusReporter | None = None,
 ) -> tuple[MultiDiGraph, GeoDataFrame | None, GeoDataFrame | None, float]:
-    """Fetch street network, water and park features with a progress bar."""
-    compensated_dist = dist * (max(height, width) / min(height, width)) / 4
+    """Fetch street network, water and park features in parallel."""
+    # Shrink the fetch radius so the map fills the poster's aspect ratio
+    # without excessive whitespace.  The divisor converts the full bounding
+    # box span to a half-extent suitable for the crop limits calculation.
+    _ASPECT_COMPENSATION_DIVISOR = 4
+    compensated_dist = dist * (max(height, width) / min(height, width)) / _ASPECT_COMPENSATION_DIVISOR
 
     with tqdm(
         total=3,
         desc="Fetching map data",
         unit="step",
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}",
-        disable=getattr(status_reporter, "json_mode", False),
+        disable=status_reporter is not None and status_reporter.json_mode,
     ) as pbar:
-        pbar.set_description("Downloading street network")
-        g = fetch_graph(point, compensated_dist, status_reporter=status_reporter)
-        if g is None:
-            raise RuntimeError("Failed to retrieve street network data.")
-        if status_reporter:
-            status_reporter.debug_log(
-                "Graph fetched",
-                nodes=g.number_of_nodes(),
-                edges=g.number_of_edges(),
-                compensated_dist=compensated_dist,
-            )
-        if g.number_of_nodes() < 10:
-            _emit_status(
-                status_reporter, "data.sparse_network",
-                f"\u26a0 Road network has only {g.number_of_nodes()} nodes. "
-                "The area may be remote or have limited data coverage.",
-                nodes=g.number_of_nodes(),
-            )
-        pbar.update(1)
 
-        pbar.set_description("Downloading water features")
-        water = fetch_features(
-            point,
-            compensated_dist,
-            tags={"natural": ["water", "bay", "strait"], "waterway": "riverbank"},
-            name="water",
-            status_reporter=status_reporter,
-        )
-        pbar.update(1)
+        def _do_graph():
+            r = fetch_graph(point, compensated_dist, status_reporter=status_reporter)
+            pbar.update(1)
+            return ("graph", r)
 
-        pbar.set_description("Downloading parks/green spaces")
-        parks = fetch_features(
-            point,
-            compensated_dist,
-            tags={"leisure": "park", "landuse": "grass"},
-            name="parks",
-            status_reporter=status_reporter,
+        def _do_water():
+            r = fetch_features(
+                point, compensated_dist,
+                tags={"natural": ["water", "bay", "strait"], "waterway": "riverbank"},
+                name="water", status_reporter=status_reporter,
+            )
+            pbar.update(1)
+            return ("water", r)
+
+        def _do_parks():
+            r = fetch_features(
+                point, compensated_dist,
+                tags={"leisure": "park", "landuse": "grass"},
+                name="parks", status_reporter=status_reporter,
+            )
+            pbar.update(1)
+            return ("parks", r)
+
+        results: dict[str, Any] = {}
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            task_names = ["graph", "water", "parks"]
+            future_to_name = {
+                executor.submit(fn): name
+                for fn, name in zip([_do_graph, _do_water, _do_parks], task_names)
+            }
+            for future in as_completed(future_to_name):
+                name = future_to_name[future]
+                try:
+                    key, val = future.result()
+                    results[key] = val
+                except (RuntimeError, ValueError, OSError, ConnectionError) as exc:
+                    _logger.warning("Parallel fetch '%s' failed: %s", name, exc)
+
+    g = results.get("graph")
+    water = results.get("water")
+    parks = results.get("parks")
+
+    if g is None:
+        raise RuntimeError(
+            f"Failed to retrieve street network data for point "
+            f"({point[0]:.4f}, {point[1]:.4f}), distance {dist}m "
+            f"(compensated {compensated_dist:.0f}m)."
         )
-        pbar.update(1)
+    if status_reporter:
+        status_reporter.debug_log(
+            "Graph fetched",
+            nodes=g.number_of_nodes(),
+            edges=g.number_of_edges(),
+            compensated_dist=compensated_dist,
+        )
+    if g.number_of_nodes() < 10:
+        _emit_status(
+            status_reporter, "data.sparse_network",
+            f"\u26a0 Road network has only {g.number_of_nodes()} nodes. "
+            "The area may be remote or have limited data coverage.",
+            nodes=g.number_of_nodes(),
+        )
 
     return g, water, parks, compensated_dist
 
@@ -724,7 +739,6 @@ def _save_output(
             f"  Output resolution: {output_width_px} x {output_height_px} px ({dpi} DPI)",
         )
     else:
-        MAX_VECTOR_DPI = 300
         effective_dpi = min(dpi, MAX_VECTOR_DPI)
         save_kwargs["dpi"] = effective_dpi
         if dpi > MAX_VECTOR_DPI:
@@ -741,7 +755,7 @@ def _save_output(
     try:
         plt.savefig(tmp_path, format=fmt, **save_kwargs)
         Path(tmp_path).replace(target)
-    except Exception:
+    except OSError:
         Path(tmp_path).unlink(missing_ok=True)
         raise
 
@@ -776,28 +790,47 @@ def create_poster(
     fonts: dict[str, str] | None = None,
     show_attribution: bool = True,
     status_reporter: StatusReporter | None = None,
-):
-    """
-    Generate a complete map poster with roads, water, parks, and typography.
+) -> None:
+    """Generate a complete map poster with roads, water, parks, and typography.
 
     Creates a high-quality poster by fetching OSM data, rendering map layers,
     applying the current theme, and adding text labels with coordinates.
 
     Args:
-        city: City name for display on poster
-        country: Country name for display on poster
-        point: (latitude, longitude) tuple for map center
-        dist: Map radius in meters
-        output_file: Path where poster will be saved
-        output_format: File format ('png', 'svg', or 'pdf')
-        width: Poster width in inches (default: 12)
-        height: Poster height in inches (default: 16)
-        country_label: Optional override for country text on poster
-        _name_label: Optional override for city name (unused, reserved for future use)
+        city: City name for display on poster.
+        country: Country name for display on poster.
+        point: (latitude, longitude) tuple for map center.
+        dist: Map radius in meters.
+        output_file: Path where poster will be saved.
+        output_format: File format ('png', 'svg', or 'pdf').
+        theme: Theme dict with keys from ``REQUIRED_THEME_KEYS``.
+        width: Poster width in inches (default: 12).
+        height: Poster height in inches (default: 16).
+        dpi: Output resolution in dots per inch (default: 300).
+        country_label: Optional override for country text on poster.
+        name_label: Deprecated — use ``display_city`` instead.
+        display_city: Custom display name for city on poster.
+        display_country: Custom display name for country on poster.
+        fonts: Dict with 'light', 'regular', 'bold' keys mapping to font
+            file paths, or None to use bundled/monospace fallback.
+        show_attribution: Whether to render the OSM attribution text.
+        status_reporter: Optional reporter for progress events.
 
     Raises:
-        RuntimeError: If street network data cannot be retrieved
+        ValueError: If city or country is empty.
+        RuntimeError: If street network data cannot be retrieved.
     """
+    if not city or not city.strip():
+        raise ValueError("city must be a non-empty string")
+    if not country or not country.strip():
+        raise ValueError("country must be a non-empty string")
+
+    if name_label is not None:
+        warnings.warn(
+            "name_label is deprecated and will be removed in v0.5.0; use display_city instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     display_city = display_city or name_label or city
     display_country = display_country or country_label or country
 
@@ -819,13 +852,22 @@ def create_poster(
         city=city, country=country,
     )
 
-    # 2. Memory check + Setup figure
+    # 2. Memory check + auto DPI reduction + Setup figure
     mem = _estimate_memory(width, height, dpi)
     if mem > _MAX_MEMORY_BYTES:
-        raise ValueError(
-            f"Estimated figure memory {mem / 1024**3:.1f} GB exceeds 2 GB limit. "
-            "Reduce dimensions or DPI."
+        max_dpi = int(math.sqrt(_MAX_MEMORY_BYTES / (width * height * 4)))
+        if max_dpi < 72:
+            raise ValueError(
+                f"Estimated memory {mem / 1024**3:.1f} GB exceeds 2 GB limit "
+                f"even at DPI 72. Reduce dimensions (currently {width}\" x {height}\")."
+            )
+        _emit_status(
+            status_reporter, "dpi.auto_reduce",
+            f"\u26a0 DPI {dpi} would use {mem / 1024**3:.1f} GB. Auto-reducing to {max_dpi}.",
+            original_dpi=dpi, reduced_dpi=max_dpi,
         )
+        dpi = max_dpi
+        mem = _estimate_memory(width, height, dpi)
     if mem > _WARN_MEMORY_BYTES:
         _emit_status(
             status_reporter, "memory.warning",
@@ -870,7 +912,7 @@ def _atomic_write_text(target: Path, content: str) -> None:
         with os.fdopen(tmp_fd, "w", encoding=FILE_ENCODING) as fh:
             fh.write(content)
         Path(tmp_path).replace(target)
-    except Exception:
+    except OSError:
         Path(tmp_path).unlink(missing_ok=True)
         raise
 
@@ -882,6 +924,49 @@ def _write_metadata(output_file: str, metadata: dict[str, Any]) -> str:
         json.dumps(metadata, indent=2, ensure_ascii=False),
     )
     return str(metadata_path)
+
+
+def create_poster_from_options(
+    options: PosterGenerationOptions,
+    theme_name: str,
+    *,
+    status_reporter: StatusReporter | None = None,
+) -> str:
+    """High-level API: resolve coordinates + load theme + create poster.
+
+    Returns the output file path.
+    """
+    reporter = status_reporter or StatusReporter()
+    width, height = _apply_paper_size(
+        options.width, options.height, options.paper_size, options.orientation, reporter,
+    )
+    dpi = _validate_dpi(options.dpi, reporter)
+    custom_fonts = _load_custom_fonts(options.font_family, reporter)
+    coords = _resolve_coordinates(options, reporter)
+    theme = load_theme(theme_name, status_reporter=reporter)
+    output_dir = options.output_dir or os.environ.get(OUTPUT_DIR_ENV) or DEFAULT_POSTERS_DIR
+    output_file = generate_output_filename(
+        options.city, theme_name, options.output_format, output_dir,
+    )
+    create_poster(
+        options.city, options.country, coords, options.distance,
+        output_file, options.output_format,
+        theme=theme, width=width, height=height, dpi=dpi,
+        display_city=options.display_city, display_country=options.display_country,
+        fonts=custom_fonts, show_attribution=options.show_attribution,
+        status_reporter=reporter,
+    )
+    metadata = {
+        "city": options.city, "country": options.country,
+        "theme": theme_name, "output_file": output_file,
+        "output_format": options.output_format,
+        "width_in": width, "height_in": height, "dpi": dpi,
+        "distance_m": options.distance,
+        "latitude": coords[0], "longitude": coords[1],
+        "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+    }
+    _write_metadata(output_file, metadata)
+    return output_file
 
 
 def generate_posters(
@@ -957,7 +1042,7 @@ def generate_posters(
                 show_attribution=options.show_attribution,
                 status_reporter=reporter,
             )
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError) as exc:
             _logger.warning("Theme '%s' failed: %s", theme_name, exc)
             failures.append(theme_name)
             continue
@@ -1004,45 +1089,45 @@ def generate_posters(
     return outputs
 
 
-def print_examples():
+def print_examples() -> None:
     """Print usage examples."""
     print("""
 City Map Poster Generator
 =========================
 
 Usage:
-  python create_map_poster.py --city <city> --country <country> [options]
+  maptoposter-cli --city <city> --country <country> [options]
 
 Examples:
   # Iconic grid patterns
-  python create_map_poster.py -c "New York" -C "USA" -t noir -d 12000           # Manhattan grid
-  python create_map_poster.py -c "Barcelona" -C "Spain" -t warm_beige -d 8000   # Eixample district grid
+  maptoposter-cli -c "New York" -C "USA" -t noir -d 12000           # Manhattan grid
+  maptoposter-cli -c "Barcelona" -C "Spain" -t warm_beige -d 8000   # Eixample district grid
 
   # Waterfront & canals
-  python create_map_poster.py -c "Venice" -C "Italy" -t blueprint -d 4000       # Canal network
-  python create_map_poster.py -c "Amsterdam" -C "Netherlands" -t ocean -d 6000  # Concentric canals
-  python create_map_poster.py -c "Dubai" -C "UAE" -t midnight_blue -d 15000     # Palm & coastline
+  maptoposter-cli -c "Venice" -C "Italy" -t blueprint -d 4000       # Canal network
+  maptoposter-cli -c "Amsterdam" -C "Netherlands" -t ocean -d 6000  # Concentric canals
+  maptoposter-cli -c "Dubai" -C "UAE" -t midnight_blue -d 15000     # Palm & coastline
 
   # Radial patterns
-  python create_map_poster.py -c "Paris" -C "France" -t pastel_dream -d 10000   # Haussmann boulevards
-  python create_map_poster.py -c "Moscow" -C "Russia" -t noir -d 12000          # Ring roads
+  maptoposter-cli -c "Paris" -C "France" -t pastel_dream -d 10000   # Haussmann boulevards
+  maptoposter-cli -c "Moscow" -C "Russia" -t noir -d 12000          # Ring roads
 
   # Organic old cities
-  python create_map_poster.py -c "Tokyo" -C "Japan" -t japanese_ink -d 15000    # Dense organic streets
-  python create_map_poster.py -c "Marrakech" -C "Morocco" -t terracotta -d 5000 # Medina maze
-  python create_map_poster.py -c "Rome" -C "Italy" -t warm_beige -d 8000        # Ancient street layout
+  maptoposter-cli -c "Tokyo" -C "Japan" -t japanese_ink -d 15000    # Dense organic streets
+  maptoposter-cli -c "Marrakech" -C "Morocco" -t terracotta -d 5000 # Medina maze
+  maptoposter-cli -c "Rome" -C "Italy" -t warm_beige -d 8000        # Ancient street layout
 
   # Coastal cities
-  python create_map_poster.py -c "San Francisco" -C "USA" -t sunset -d 10000    # Peninsula grid
-  python create_map_poster.py -c "Sydney" -C "Australia" -t ocean -d 12000      # Harbor city
-  python create_map_poster.py -c "Mumbai" -C "India" -t contrast_zones -d 18000 # Coastal peninsula
+  maptoposter-cli -c "San Francisco" -C "USA" -t sunset -d 10000    # Peninsula grid
+  maptoposter-cli -c "Sydney" -C "Australia" -t ocean -d 12000      # Harbor city
+  maptoposter-cli -c "Mumbai" -C "India" -t contrast_zones -d 18000 # Coastal peninsula
 
   # River cities
-  python create_map_poster.py -c "London" -C "UK" -t noir -d 15000              # Thames curves
-  python create_map_poster.py -c "Budapest" -C "Hungary" -t copper_patina -d 8000  # Danube split
+  maptoposter-cli -c "London" -C "UK" -t noir -d 15000              # Thames curves
+  maptoposter-cli -c "Budapest" -C "Hungary" -t copper_patina -d 8000  # Danube split
 
   # List themes
-  python create_map_poster.py --list-themes
+  maptoposter-cli --list-themes
 
 Options:
   --city, -c        City name (required)
@@ -1063,7 +1148,7 @@ Generated posters are saved to 'posters/' directory.
 """)
 
 
-def list_themes():
+def list_themes() -> None:
     """List all available themes with descriptions."""
 
     available_themes = get_available_themes()
@@ -1080,7 +1165,8 @@ def list_themes():
                 theme_data = json.load(f)
                 display_name = theme_data.get("name", theme_name)
                 description = theme_data.get("description", "")
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError) as exc:
+            _logger.warning("Failed to read theme '%s' for listing: %s", theme_name, exc)
             display_name = theme_name
             description = ""
         print(f"  {theme_name}")

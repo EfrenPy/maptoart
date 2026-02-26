@@ -1,5 +1,6 @@
 """Matplotlib rendering logic for the City Map Poster Generator."""
 
+import logging
 from typing import Any
 
 import matplotlib.colors as mcolors
@@ -13,6 +14,8 @@ from shapely.geometry import Point
 
 from ._util import StatusReporter, _emit_status
 
+_logger = logging.getLogger(__name__)
+
 _ZORDER = {"water": 0.5, "parks": 0.8, "gradient": 10, "text": 11}
 
 _GRADIENT_VALS = np.linspace(0, 1, 256).reshape(-1, 1)
@@ -20,6 +23,25 @@ _GRADIENT_HSTACK = np.hstack((_GRADIENT_VALS, _GRADIENT_VALS))
 
 _MAX_MEMORY_BYTES = 2 * 1024**3  # 2 GB hard limit
 _WARN_MEMORY_BYTES = 500 * 1024**2  # 500 MB warning
+
+# Font sizes (points, before scaling)
+_BASE_FONT_CITY = 60
+_BASE_FONT_COUNTRY = 22
+_BASE_FONT_COORDS = 14
+_BASE_FONT_ATTR = 8
+
+# Vertical positions (fraction of axes height)
+_POS_CITY_Y = 0.14
+_POS_COUNTRY_Y = 0.10
+_POS_COORDS_Y = 0.07
+_POS_DIVIDER_Y = 0.125
+
+# Gradient fade extent
+_GRADIENT_BOTTOM_END = 0.25
+_GRADIENT_TOP_START = 0.75
+
+# City name scaling threshold
+_CITY_NAME_SCALE_THRESHOLD = 10
 
 
 def _estimate_memory(width: float, height: float, dpi: int) -> int:
@@ -52,10 +74,10 @@ def create_gradient_fade(ax: Any, color: str, location: str = "bottom", zorder: 
     if location == "bottom":
         my_colors[:, 3] = np.linspace(1, 0, 256)
         extent_y_start = 0.0
-        extent_y_end = 0.25
+        extent_y_end = _GRADIENT_BOTTOM_END
     else:
         my_colors[:, 3] = np.linspace(0, 1, 256)
-        extent_y_start = 0.75
+        extent_y_start = _GRADIENT_TOP_START
         extent_y_end = 1.0
 
     custom_cmap = mcolors.ListedColormap(my_colors)
@@ -164,6 +186,32 @@ def get_crop_limits(
     )
 
 
+def _project_and_plot_layer(
+    gdf: GeoDataFrame | None,
+    target_crs: Any,
+    ax: Any,
+    color: str,
+    zorder: float,
+    label: str,
+) -> None:
+    """Project polygon features to *target_crs* and plot them on *ax*.
+
+    Filters for Polygon/MultiPolygon geometries, attempts osmnx projection
+    with a fallback to direct CRS transform, then plots.
+    """
+    if gdf is None or gdf.empty:
+        return
+    polys = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
+    if polys.empty:
+        return
+    try:
+        polys = ox.projection.project_gdf(polys)
+    except (ValueError, RuntimeError):
+        _logger.debug("osmnx projection failed for %s; falling back to to_crs", label)
+        polys = polys.to_crs(target_crs)
+    polys.plot(ax=ax, facecolor=color, edgecolor="none", zorder=zorder)
+
+
 def _render_layers(
     ax: Any,
     g_proj: MultiDiGraph,
@@ -177,23 +225,9 @@ def _render_layers(
     status_reporter: StatusReporter | None = None,
 ) -> None:
     """Project graph, plot water/parks/roads/gradient layers."""
-    if water is not None and not water.empty:
-        water_polys = water[water.geometry.type.isin(["Polygon", "MultiPolygon"])]
-        if not water_polys.empty:
-            try:
-                water_polys = ox.projection.project_gdf(water_polys)
-            except (ValueError, RuntimeError):
-                water_polys = water_polys.to_crs(g_proj.graph['crs'])
-            water_polys.plot(ax=ax, facecolor=theme['water'], edgecolor='none', zorder=_ZORDER["water"])
-
-    if parks is not None and not parks.empty:
-        parks_polys = parks[parks.geometry.type.isin(["Polygon", "MultiPolygon"])]
-        if not parks_polys.empty:
-            try:
-                parks_polys = ox.projection.project_gdf(parks_polys)
-            except (ValueError, RuntimeError):
-                parks_polys = parks_polys.to_crs(g_proj.graph['crs'])
-            parks_polys.plot(ax=ax, facecolor=theme['parks'], edgecolor='none', zorder=_ZORDER["parks"])
+    target_crs = g_proj.graph["crs"]
+    _project_and_plot_layer(water, target_crs, ax, theme["water"], _ZORDER["water"], "water")
+    _project_and_plot_layer(parks, target_crs, ax, theme["parks"], _ZORDER["parks"], "parks")
 
     _emit_status(status_reporter, "poster.roads", "Applying road hierarchy colors...")
     edge_colors = get_edge_colors_by_type(g_proj, theme)
@@ -233,14 +267,19 @@ def _apply_typography(
     from .core import _get_fonts, is_latin_script
 
     scale_factor = min(height, width) / 12.0
-    base_main, base_sub, base_coords, base_attr = 60, 22, 14, 8
+    base_main = _BASE_FONT_CITY
+    base_sub = _BASE_FONT_COUNTRY
+    base_coords = _BASE_FONT_COORDS
+    base_attr = _BASE_FONT_ATTR
 
     active_fonts = fonts or _get_fonts()
-    if active_fonts:
+    _required_weights = ("light", "regular", "bold")
+    if active_fonts and all(k in active_fonts for k in _required_weights):
         font_sub = FontProperties(fname=active_fonts["light"], size=base_sub * scale_factor)
         font_coords = FontProperties(fname=active_fonts["regular"], size=base_coords * scale_factor)
         font_attr = FontProperties(fname=active_fonts["light"], size=base_attr * scale_factor)
     else:
+        active_fonts = None  # ensure monospace path is used for city font too
         font_sub = FontProperties(family="monospace", weight="normal", size=base_sub * scale_factor)
         font_coords = FontProperties(family="monospace", size=base_coords * scale_factor)
         font_attr = FontProperties(family="monospace", size=base_attr * scale_factor)
@@ -252,8 +291,8 @@ def _apply_typography(
 
     base_adjusted_main = base_main * scale_factor
     city_char_count = len(display_city)
-    if city_char_count > 10:
-        length_factor = 10 / city_char_count
+    if city_char_count > _CITY_NAME_SCALE_THRESHOLD:
+        length_factor = _CITY_NAME_SCALE_THRESHOLD / city_char_count
         adjusted_font_size = max(base_adjusted_main * length_factor, 10 * scale_factor)
     else:
         adjusted_font_size = base_adjusted_main
@@ -264,42 +303,38 @@ def _apply_typography(
         font_main_adjusted = FontProperties(family="monospace", weight="bold", size=adjusted_font_size)
 
     ax.text(
-        0.5, 0.14, spaced_city,
+        0.5, _POS_CITY_Y, spaced_city,
         transform=ax.transAxes, color=theme["text"],
         ha="center", fontproperties=font_main_adjusted, zorder=_ZORDER["text"],
     )
     ax.text(
-        0.5, 0.10, display_country.upper(),
+        0.5, _POS_COUNTRY_Y, display_country.upper(),
         transform=ax.transAxes, color=theme["text"],
         ha="center", fontproperties=font_sub, zorder=_ZORDER["text"],
     )
 
     lat, lon = point
-    coords = (
-        f"{lat:.4f}\u00b0 N / {lon:.4f}\u00b0 E"
-        if lat >= 0
-        else f"{abs(lat):.4f}\u00b0 S / {lon:.4f}\u00b0 E"
-    )
-    if lon < 0:
-        coords = coords.replace("E", "W")
+    lat_dir = "N" if lat >= 0 else "S"
+    lon_dir = "E" if lon >= 0 else "W"
+    coords = f"{abs(lat):.4f}\u00b0 {lat_dir} / {abs(lon):.4f}\u00b0 {lon_dir}"
     ax.text(
-        0.5, 0.07, coords,
+        0.5, _POS_COORDS_Y, coords,
         transform=ax.transAxes, color=theme["text"], alpha=0.7,
         ha="center", fontproperties=font_coords, zorder=_ZORDER["text"],
     )
 
     ax.plot(
-        [0.4, 0.6], [0.125, 0.125],
+        [0.4, 0.6], [_POS_DIVIDER_Y, _POS_DIVIDER_Y],
         transform=ax.transAxes, color=theme["text"],
         linewidth=1 * scale_factor, zorder=_ZORDER["text"],
     )
 
     if show_attribution:
-        fonts_for_attr = _get_fonts()
-        if fonts_for_attr:
-            font_attr = FontProperties(fname=fonts_for_attr["light"], size=8)
+        attr_fonts = active_fonts or _get_fonts()
+        if attr_fonts and "light" in attr_fonts:
+            font_attr = FontProperties(fname=attr_fonts["light"], size=_BASE_FONT_ATTR)
         else:
-            font_attr = FontProperties(family="monospace", size=8)
+            font_attr = FontProperties(family="monospace", size=_BASE_FONT_ATTR)
         ax.text(
             0.98, 0.02, "\u00a9 OpenStreetMap contributors",
             transform=ax.transAxes, color=theme["text"], alpha=0.5,

@@ -1,18 +1,45 @@
 """Geocoding logic for the City Map Poster Generator."""
 
+from __future__ import annotations
+
 import asyncio
+import logging
+import os
 import time
 from importlib.metadata import PackageNotFoundError, version
+from typing import TYPE_CHECKING
 
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut, GeocoderUnavailable
 from geopy.geocoders import Nominatim
+from geopy.location import Location
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from ._util import StatusReporter, _emit_status
+from ._util import CacheError, StatusReporter, _CACHE_TTL_COORDS, _emit_status, cache_get, cache_set
+
+if TYPE_CHECKING:
+    from .core import PosterGenerationOptions
+
+_logger = logging.getLogger(__name__)
 
 try:
     _MAPTOPOSTER_VERSION = version("maptoposter")
-except PackageNotFoundError:
+except PackageNotFoundError:  # pragma: no cover
     _MAPTOPOSTER_VERSION = "0.0.0"
+
+# Nominatim usage policy requires max 1 request/second.  Configurable via
+# MAPTOPOSTER_NOMINATIM_DELAY for testing or when using a private instance.
+_NOMINATIM_DELAY: float = float(os.environ.get("MAPTOPOSTER_NOMINATIM_DELAY", "1"))
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=4),
+    retry=retry_if_exception_type((GeocoderTimedOut, GeocoderUnavailable)),
+    reraise=True,
+)
+def _geocode_with_retry(geolocator: Nominatim, query: str) -> Location | None:
+    """Geocode a query with automatic retry on transient errors."""
+    return geolocator.geocode(query)
 
 
 def _validate_coordinate_bounds(lat: float, lon: float) -> None:
@@ -24,12 +51,10 @@ def _validate_coordinate_bounds(lat: float, lon: float) -> None:
 
 
 def _resolve_coordinates(
-    options,  # PosterGenerationOptions — avoid circular import
+    options: PosterGenerationOptions,
     status_reporter: StatusReporter | None,
 ) -> tuple[float, float]:
     """Determine final (lat, lon) from explicit overrides or geocoding."""
-    from .core import get_coordinates  # deferred to avoid circular import
-
     has_lat = options.latitude is not None
     has_lon = options.longitude is not None
 
@@ -56,17 +81,11 @@ def get_coordinates(
     country: str,
     *,
     status_reporter: StatusReporter | None = None,
-):
+) -> tuple[float, float]:
     """
     Fetches coordinates for a given city and country using geopy.
     Includes rate limiting to be respectful to the geocoding service.
     """
-    import logging
-
-    from .core import CacheError, cache_get, cache_set
-
-    _logger = logging.getLogger(__name__)
-
     coords = f"coords_{city.lower()}_{country.lower()}"
     cached = cache_get(coords)
     if cached:
@@ -91,34 +110,22 @@ def get_coordinates(
         timeout=10,
     )
 
-    # Add a small delay to respect Nominatim's usage policy
-    time.sleep(1)
+    # Rate-limit to respect Nominatim's usage policy
+    time.sleep(_NOMINATIM_DELAY)
 
-    max_retries = 2
-    for attempt in range(max_retries + 1):
-        try:
-            location = geolocator.geocode(f"{city}, {country}")
-            break
-        except (GeocoderTimedOut, GeocoderUnavailable) as e:
-            if attempt < max_retries:
-                backoff = 2 ** attempt  # 1s, 2s
-                _emit_status(
-                    status_reporter,
-                    "geocode.retry",
-                    f"Geocoder transient error, retrying in {backoff}s...",
-                    attempt=attempt + 1,
-                )
-                time.sleep(backoff)
-            else:
-                raise ValueError(
-                    f"Geocoding failed for {city}, {country}: {e}. "
-                    "The geocoding service is not responding."
-                ) from e
-        except GeocoderServiceError as e:
-            raise ValueError(
-                f"Geocoding failed for {city}, {country}: {e}. "
-                "Check your internet connection and try again."
-            ) from e
+    try:
+        location = _geocode_with_retry(geolocator, f"{city}, {country}")
+    except (GeocoderTimedOut, GeocoderUnavailable) as e:
+        # Tenacity exhausted all retries and reraised the original exception
+        raise ValueError(
+            f"Geocoding failed for {city}, {country}: {e}. "
+            "The geocoding service is not responding."
+        ) from e
+    except GeocoderServiceError as e:
+        raise ValueError(
+            f"Geocoding failed for {city}, {country}: {e}. "
+            "Check your internet connection and try again."
+        ) from e
 
     # If geocode returned a coroutine in some environments, run it to get the result.
     if asyncio.iscoroutine(location):
@@ -154,7 +161,7 @@ def get_coordinates(
             longitude=location.longitude,
         )
         try:
-            cache_set(coords, (location.latitude, location.longitude))
+            cache_set(coords, (location.latitude, location.longitude), ttl=_CACHE_TTL_COORDS)
         except CacheError as e:
             _logger.warning("Failed to cache coordinates: %s", e)
         return (location.latitude, location.longitude)
