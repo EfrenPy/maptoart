@@ -59,197 +59,162 @@ CONFIG_KEY_ALIASES = {
 
 def _build_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
-        description="Generate beautiful map posters for any city",
+        prog="maptoposter-cli",
+        description=(
+            "City Map Poster Generator v0.4\n"
+            "\n"
+            "Generate beautiful, minimalist map posters for any city in the world.\n"
+            "Supports PNG, SVG, and PDF output, 17 built-in themes, Google Fonts\n"
+            "for multilingual text (CJK, Arabic, Thai, etc.), batch processing\n"
+            "from CSV/JSON files, and HTML gallery generation.\n"
+            "\n"
+            "Install:  pip install maptoposter\n"
+            "Docs:     https://github.com/EfrenPy/maptoposter"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  maptoposter-cli --city "New York" --country "USA"
-  maptoposter-cli --city "Paris" --country "France" --theme noir --distance 15000
-  maptoposter-cli --city Tokyo --country Japan --all-themes
-  maptoposter-cli --city London --country UK --dry-run
-  maptoposter-cli --list-themes
+        epilog="""\
+Quick start:
+  maptoposter-cli -c "Paris" -C "France"
+  maptoposter-cli -c "Tokyo" -C "Japan" -t japanese_ink -d 15000
+  maptoposter-cli -c "New York" -C "USA" -t noir -p A2 --dpi 600
+
+Multilingual (non-Latin scripts):
+  maptoposter-cli -c Tokyo -C Japan -dc "東京" -dC "日本" --font-family "Noto Sans JP"
+  maptoposter-cli -c Dubai -C UAE -dc "دبي" -dC "الإمارات" --font-family "Cairo"
+  maptoposter-cli -c Seoul -C "South Korea" -dc "서울" -dC "대한민국" --font-family "Noto Sans KR"
+
+Batch & gallery:
+  maptoposter-cli --batch cities.csv --gallery
+  maptoposter-cli --batch cities.json --dpi 150 --output-dir posters/
+
+Config file (JSON or YAML):
+  maptoposter-cli --config poster.yaml
+  maptoposter-cli --config poster.yaml --dpi 600    # CLI flags override config
+
+Utilities:
+  maptoposter-cli --list-themes                      # show all 17 themes
+  maptoposter-cli -c London -C UK --dry-run          # preview without generating
+  maptoposter-cli --cache-info                       # show cache statistics
+  maptoposter-cli --cache-clear                      # delete cached OSM data
+
+Paper sizes: A0 (33.1x46.8"), A1 (23.4x33.1"), A2 (16.5x23.4"),
+             A3 (11.7x16.5"), A4 (8.3x11.7"). Use -o landscape to flip.
+
+DPI guide:  72 (screen) | 150 (draft) | 300 (print) | 600 (pro) | 1200 (archival)
+            Auto-reduced if memory would exceed 2 GB. Capped at 300 for PDF/SVG.
+
+Distance guide:
+   3000-6000m   Small/dense (Venice canals, Amsterdam center, old medinas)
+   8000-12000m  Medium cities (Paris boulevards, Barcelona Eixample)
+  15000-20000m  Large metros (Tokyo, Mumbai, New York full view)
 
 Environment variables:
-  MAPTOPOSTER_OUTPUT_DIR      Default output directory for posters
-  MAPTOPOSTER_CACHE_DIR       OSM data cache directory (default: cache/)
-  MAPTOPOSTER_THEMES_DIR      Custom themes directory
-  MAPTOPOSTER_FONTS_DIR       Bundled font files directory
-  MAPTOPOSTER_FONTS_CACHE     Google Fonts download cache
-  MAPTOPOSTER_NOMINATIM_DELAY Rate-limit delay in seconds (default: 1)
+  MAPTOPOSTER_OUTPUT_DIR       Output directory (default: posters/)
+  MAPTOPOSTER_CACHE_DIR        OSM data cache (default: cache/)
+  MAPTOPOSTER_THEMES_DIR       Custom themes directory
+  MAPTOPOSTER_FONTS_DIR        Bundled font files directory
+  MAPTOPOSTER_FONTS_CACHE      Google Fonts cache (~/.cache/maptoposter/fonts)
+  MAPTOPOSTER_NOMINATIM_DELAY  Geocoding rate-limit in seconds (default: 1)
+
+Themes (17 built-in):
+  autumn, blueprint, contrast_zones, copper_patina, emerald, forest,
+  gradient_roads, japanese_ink, midnight_blue, monochrome_blue,
+  neon_cyberpunk, noir, ocean, pastel_dream, sunset, terracotta, warm_beige
         """,
     )
 
 
 def _add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--config",
-        type=str,
-        help="Path to a JSON/YAML config file with default options",
-    )
-    parser.add_argument("--city", "-c", type=str, help="City name")
-    parser.add_argument("--country", "-C", type=str, help="Country name")
-    parser.add_argument(
-        "--latitude",
-        "-lat",
-        dest="latitude",
-        type=str,
-        help="Override latitude center point",
-    )
-    parser.add_argument(
-        "--longitude",
-        "-long",
-        dest="longitude",
-        type=str,
-        help="Override longitude center point",
-    )
-    parser.add_argument(
-        "--country-label",
-        dest="country_label",
-        type=str,
-        help="Override country text displayed on poster",
-    )
-    parser.add_argument(
-        "--theme",
-        "-t",
-        type=str,
-        default="terracotta",
-        help="Theme name (default: terracotta). Use --list-themes to see all options",
-    )
-    parser.add_argument(
-        "--themes",
-        nargs="+",
-        default=None,
-        help="List of theme names to generate (overrides --theme)",
-    )
-    parser.add_argument(
-        "--all-themes",
-        dest="all_themes",
-        action="store_true",
-        help="Generate posters for all themes",
-    )
-    parser.add_argument(
-        "--distance",
-        "-d",
-        type=int,
-        default=18000,
-        help="Map radius in meters (default: 18000, max: 100000)",
-    )
-    parser.add_argument(
-        "--width",
-        "-W",
-        type=float,
-        default=12,
-        help="Image width in inches (default: 12, max: 20)",
-    )
-    parser.add_argument(
-        "--height",
-        "-H",
-        type=float,
-        default=16,
-        help="Image height in inches (default: 16, max: 20)",
-    )
-    parser.add_argument(
-        "--list-themes",
-        action="store_true",
-        help="List all available themes",
-    )
-    parser.add_argument(
-        "--display-city",
-        "-dc",
-        type=str,
-        help="Custom display name for city (for i18n support)",
-    )
-    parser.add_argument(
-        "--display-country",
-        "-dC",
-        type=str,
-        help="Custom display name for country (for i18n support)",
-    )
-    parser.add_argument(
-        "--font-family",
-        type=str,
-        help='Google Fonts family name (e.g., "Noto Sans JP", "Open Sans"). If not specified, uses local Roboto fonts.',
-    )
-    parser.add_argument(
-        "--format",
-        "-f",
-        default="png",
-        choices=["png", "svg", "pdf"],
-        help="Output format for the poster (default: png)",
-    )
-    parser.add_argument(
-        "--no-attribution",
-        dest="no_attribution",
-        action="store_true",
-        help="Hide the OpenStreetMap attribution text",
-    )
-    parser.add_argument(
-        "--paper-size",
-        "-p",
-        type=str,
-        choices=["A0", "A1", "A2", "A3", "A4"],
-        help="Paper size preset (overrides --width and --height)",
-    )
-    parser.add_argument(
-        "--orientation",
-        "-o",
-        type=str,
-        choices=["portrait", "landscape"],
-        default="portrait",
-        help="Paper orientation (default: portrait)",
-    )
-    parser.add_argument(
-        "--dpi",
-        type=int,
-        default=300,
-        help="Output DPI (default: 300). Typical values: 72 (screen), 150 (draft), 300 (print)."
-             " Capped at 300 for vector formats (PDF, SVG)",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        help="Destination directory for posters and metadata (overrides env)",
-    )
-    parser.add_argument(
-        "--log-format",
-        type=str,
-        choices=["text", "json"],
-        default="text",
-        help="Status log format (text for humans, json for automation)",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug output (verbose diagnostics)",
-    )
-    parser.add_argument(
-        "--dry-run",
-        dest="dry_run",
-        action="store_true",
-        help="Show configuration summary and estimated output size without generating posters",
-    )
-    parser.add_argument(
-        "--batch",
-        type=str,
-        help="Path to a CSV or JSON file with multiple cities for batch generation",
-    )
-    parser.add_argument(
-        "--gallery",
-        action="store_true",
-        help="Generate an HTML gallery of all posters in the output directory",
-    )
-    parser.add_argument(
-        "--cache-clear",
-        dest="cache_clear",
-        action="store_true",
-        help="Clear the OSM data cache and exit",
-    )
-    parser.add_argument(
-        "--cache-info",
-        dest="cache_info",
-        action="store_true",
-        help="Show cache statistics and exit",
-    )
+    # -- Required (unless using --batch) --
+    req = parser.add_argument_group("required arguments (unless using --batch)")
+    req.add_argument("--city", "-c", type=str,
+                     help="City name for geocoding (e.g., 'Paris', 'Tokyo')")
+    req.add_argument("--country", "-C", type=str,
+                     help="Country name for geocoding (e.g., 'France', 'Japan')")
+
+    # -- Map & layout --
+    layout = parser.add_argument_group("map & layout")
+    layout.add_argument("--theme", "-t", type=str, default="terracotta",
+                        help="Color theme (default: terracotta). See --list-themes for all 17 options."
+                             " Misspelled names are auto-corrected")
+    layout.add_argument("--themes", nargs="+", default=None,
+                        help="Generate multiple themes in one run (e.g., --themes noir terracotta sunset)")
+    layout.add_argument("--all-themes", dest="all_themes", action="store_true",
+                        help="Generate a poster for every available theme")
+    layout.add_argument("--distance", "-d", type=int, default=18000,
+                        help="Map radius in meters (default: 18000, max: 100000)."
+                             " 3000-6000 for small cities, 15000-20000 for large metros")
+    layout.add_argument("--width", "-W", type=float, default=12,
+                        help="Poster width in inches (default: 12, max: 20)")
+    layout.add_argument("--height", "-H", type=float, default=16,
+                        help="Poster height in inches (default: 16, max: 20)")
+    layout.add_argument("--paper-size", "-p", type=str, choices=["A0", "A1", "A2", "A3", "A4"],
+                        help="Standard paper size (overrides --width/--height)")
+    layout.add_argument("--orientation", "-o", type=str, choices=["portrait", "landscape"],
+                        default="portrait", help="Paper orientation (default: portrait)")
+    layout.add_argument("--latitude", "-lat", dest="latitude", type=str,
+                        help="Override latitude (decimal or DMS, e.g., '48.8566' or '48d51m24s')")
+    layout.add_argument("--longitude", "-long", dest="longitude", type=str,
+                        help="Override longitude (decimal or DMS, e.g., '2.3522' or '2d21m8s')")
+
+    # -- Output --
+    out = parser.add_argument_group("output")
+    out.add_argument("--format", "-f", default="png", choices=["png", "svg", "pdf"],
+                     help="Output format (default: png). SVG/PDF are vector and scale to any size")
+    out.add_argument("--dpi", type=int, default=300,
+                     help="Resolution in dots per inch (default: 300). Auto-reduced if memory"
+                          " would exceed 2 GB. Capped at 300 for vector formats (PDF/SVG)")
+    out.add_argument("--output-dir", type=str,
+                     help="Destination directory for posters and metadata sidecar files"
+                          " (default: posters/ or $MAPTOPOSTER_OUTPUT_DIR)")
+    out.add_argument("--no-attribution", dest="no_attribution", action="store_true",
+                     help="Hide the OpenStreetMap attribution text on the poster")
+
+    # -- Multilingual (i18n) --
+    i18n = parser.add_argument_group("multilingual support")
+    i18n.add_argument("--display-city", "-dc", type=str,
+                      help="Custom city text on poster, e.g., '東京' for Tokyo in Japanese")
+    i18n.add_argument("--display-country", "-dC", type=str,
+                      help="Custom country text on poster, e.g., '日本' for Japan in Japanese")
+    i18n.add_argument("--country-label", dest="country_label", type=str,
+                      help="Override country text displayed (alias for --display-country)")
+    i18n.add_argument("--font-family", type=str,
+                      help="Google Fonts family name for non-Latin scripts (e.g., 'Noto Sans JP',"
+                           " 'Cairo', 'Noto Sans KR'). Auto-downloaded and cached locally."
+                           " Defaults to bundled Roboto")
+
+    # -- Batch & gallery --
+    batch_grp = parser.add_argument_group("batch processing & gallery")
+    batch_grp.add_argument("--batch", type=str,
+                           help="CSV or JSON file with multiple cities. CSV columns: city, country,"
+                                " theme, distance, dpi, width, height, format, display_city,"
+                                " display_country, font_family. Does not require --city/--country")
+    batch_grp.add_argument("--gallery", action="store_true",
+                           help="Generate a self-contained HTML gallery page (index.html)"
+                                " with CSS grid layout and metadata cards")
+
+    # -- Config & logging --
+    config_grp = parser.add_argument_group("configuration & logging")
+    config_grp.add_argument("--config", type=str,
+                            help="JSON or YAML config file. All CLI options can be set as"
+                                 " snake_case keys. CLI flags override config values")
+    config_grp.add_argument("--log-format", type=str, choices=["text", "json"], default="text",
+                            help="Output format for status events (default: text)."
+                                 " Use 'json' for machine-readable newline-delimited JSON")
+    config_grp.add_argument("--debug", action="store_true",
+                            help="Enable verbose DEBUG-level logging output")
+
+    # -- Utilities --
+    util = parser.add_argument_group("utilities")
+    util.add_argument("--list-themes", action="store_true",
+                      help="List all 17 built-in themes with descriptions and exit")
+    util.add_argument("--dry-run", dest="dry_run", action="store_true",
+                      help="Preview configuration, coordinates, dimensions, and estimated"
+                           " file size without generating any posters")
+    util.add_argument("--cache-info", dest="cache_info", action="store_true",
+                      help="Show cache statistics (file count, total size, TTL) and exit")
+    util.add_argument("--cache-clear", dest="cache_clear", action="store_true",
+                      help="Delete all cached OSM data, coordinates, and fonts, then exit")
 
 
 def _load_config_file(path: Path) -> dict[str, Any]:

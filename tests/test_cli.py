@@ -312,9 +312,11 @@ class TestCLIHelpText:
         parser = _build_parser()
         help_text = parser.format_help()
         assert "max: 100000" in help_text
-        assert "Typical values" in help_text
         assert "--list-themes" in help_text
         assert "--dry-run" in help_text
+        assert "--batch" in help_text
+        assert "--gallery" in help_text
+        assert "Auto-reduced" in help_text
 
     def test_help_text_documents_env_vars(self) -> None:
         parser = _build_parser()
