@@ -84,7 +84,7 @@ Otherwise (pip + venv):
 maptoposter-cli --city <city> --country <country> [options]
 ```
 
-> **Legacy compatibility:** `python create_map_poster.py ...` still works if you prefer calling the script directly.
+> **Legacy compatibility:** `maptoposter-cli ...` still works if you prefer calling the script directly.
 
 ### Programmatic Usage
 
@@ -97,7 +97,36 @@ options = PosterGenerationOptions(city="Paris", country="France", theme="terraco
 generate_posters(options)
 ```
 
-This API is ideal for services (Node, workers, etc.) that want to orchestrate renders without shelling out to the CLI.
+A convenience wrapper accepts keyword arguments directly:
+
+```python
+from maptoposter import create_poster_from_options
+
+create_poster_from_options(city="Paris", country="France", theme="terracotta", dpi=150)
+```
+
+**Progress streaming** — pass an `on_progress` callback to receive status events:
+
+```python
+from maptoposter import PosterGenerationOptions, generate_posters
+from maptoposter._util import StatusReporter
+
+def progress_handler(event: str, message: str, extra: dict):
+    print(f"[{event}] {message}")
+
+reporter = StatusReporter(on_progress=progress_handler)
+options = PosterGenerationOptions(city="Paris", country="France")
+generate_posters(options, status_reporter=reporter)
+```
+
+**Batch processing** from Python:
+
+```python
+from maptoposter import run_batch
+
+result = run_batch("cities.csv", global_overrides={"output_dir": "posters/"})
+print(f"{len(result['successes'])} posters generated, {len(result['failures'])} failures")
+```
 
 > See `examples/basic_python_usage.py` for a ready-to-run snippet that writes posters into `examples/output/` and logs JSON progress.
 
@@ -139,14 +168,20 @@ You can still combine individual flags, e.g. `maptoposter-cli --config poster.ya
 
 ### Consuming from Other Projects
 
-Until we publish a wheel, install the repository directly into neighboring projects (e.g., `maptoposterpage`) using editable mode:
+Install directly from PyPI:
+
+```bash
+pip install maptoposter
+```
+
+For development, use an editable install:
 
 ```bash
 cd /path/to/maptoposterpage
 pip install -e ../maptoposter
 ```
 
-Editable installs let downstream apps pick up changes instantly. For immutable builds, run `uv build` or `pip install .` to produce/install a wheel before distributing it.
+For immutable builds, run `uv build` or `pip install .` to produce/install a wheel.
 
 ### Required Options
 
@@ -170,9 +205,13 @@ Editable installs let downstream apps pick up changes instantly. For immutable b
 | **OPTIONAL:** `--height` | `-H` | Image height in inches | 16 (max: 20) |
 | **OPTIONAL:** `--paper-size` | `-p` | Paper size preset: A0, A1, A2, A3, A4 (overrides width/height) | |
 | **OPTIONAL:** `--orientation` | `-o` | Paper orientation: portrait, landscape | portrait |
-| **OPTIONAL:** `--dpi` | | Output DPI (affects PNG directly; capped at 300 for PDF/SVG) | 300 |
+| **OPTIONAL:** `--dpi` | | Output DPI (auto-reduced if memory would exceed 2 GB) | 300 |
 | **OPTIONAL:** `--no-attribution` | | Hide the OpenStreetMap attribution text | |
 | **OPTIONAL:** `--format` | `-f` | Output format: png, svg, pdf | png |
+| **OPTIONAL:** `--batch` | | CSV or JSON file for batch poster generation | |
+| **OPTIONAL:** `--gallery` | | Generate an HTML gallery after rendering | |
+| **OPTIONAL:** `--cache-clear` | | Delete all cached OSM data and exit | |
+| **OPTIONAL:** `--cache-info` | | Print cache statistics and exit | |
 
 ### Multilingual Support - i18n
 
@@ -188,16 +227,16 @@ Display city and country names in your language with custom fonts from google fo
 
 ```bash
 # Japanese
-python create_map_poster.py -c "Tokyo" -C "Japan" -dc "東京" -dC "日本" --font-family "Noto Sans JP"
+maptoposter-cli -c "Tokyo" -C "Japan" -dc "東京" -dC "日本" --font-family "Noto Sans JP"
 
 # Korean
-python create_map_poster.py -c "Seoul" -C "South Korea" -dc "서울" -dC "대한민국" --font-family "Noto Sans KR"
+maptoposter-cli -c "Seoul" -C "South Korea" -dc "서울" -dC "대한민국" --font-family "Noto Sans KR"
 
 # Arabic
-python create_map_poster.py -c "Dubai" -C "UAE" -dc "دبي" -dC "الإمارات" --font-family "Cairo"
+maptoposter-cli -c "Dubai" -C "UAE" -dc "دبي" -dC "الإمارات" --font-family "Cairo"
 ```
 
-**Note**: Fonts are automatically downloaded from Google Fonts and cached locally in `fonts/cache/`.
+**Note**: Fonts are automatically downloaded from Google Fonts and cached locally under `~/.cache/maptoposter/fonts` (override with `MAPTOPOSTER_FONTS_CACHE`).
 
 ### Paper Size Presets
 
@@ -213,19 +252,19 @@ Use `--paper-size` (`-p`) for standard print-ready sizes. Combine with `--orient
 
 ```bash
 # A2 portrait poster
-python create_map_poster.py -c "Paris" -C "France" -p A2
+maptoposter-cli -c "Paris" -C "France" -p A2
 
 # A3 landscape poster
-python create_map_poster.py -c "Tokyo" -C "Japan" -p A3 -o landscape
+maptoposter-cli -c "Tokyo" -C "Japan" -p A3 -o landscape
 
 # High-resolution A2 at 600 DPI
-python create_map_poster.py -c "London" -C "UK" -p A2 --dpi 600
+maptoposter-cli -c "London" -C "UK" -p A2 --dpi 600
 
 # A4 PDF for print shop
-python create_map_poster.py -c "Berlin" -C "Germany" -p A4 -f pdf
+maptoposter-cli -c "Berlin" -C "Germany" -p A4 -f pdf
 
 # A0 large format poster
-python create_map_poster.py -c "New York" -C "USA" -p A0 --dpi 300
+maptoposter-cli -c "New York" -C "USA" -p A0 --dpi 300
 ```
 
 ### DPI Guide
@@ -256,10 +295,10 @@ Use these values for `-W` and `-H` to target specific resolutions:
 
 ```bash
 # Simple usage with default theme
-python create_map_poster.py -c "Paris" -C "France"
+maptoposter-cli -c "Paris" -C "France"
 
 # With custom theme and distance
-python create_map_poster.py -c "New York" -C "USA" -t noir -d 12000
+maptoposter-cli -c "New York" -C "USA" -t noir -d 12000
 ```
 
 #### Multilingual Examples (Non-Latin Scripts)
@@ -268,63 +307,115 @@ Display city names in their native scripts:
 
 ```bash
 # Japanese
-python create_map_poster.py -c "Tokyo" -C "Japan" -dc "東京" -dC "日本" --font-family "Noto Sans JP" -t japanese_ink
+maptoposter-cli -c "Tokyo" -C "Japan" -dc "東京" -dC "日本" --font-family "Noto Sans JP" -t japanese_ink
 
 # Korean
-python create_map_poster.py -c "Seoul" -C "South Korea" -dc "서울" -dC "대한민국" --font-family "Noto Sans KR" -t midnight_blue
+maptoposter-cli -c "Seoul" -C "South Korea" -dc "서울" -dC "대한민국" --font-family "Noto Sans KR" -t midnight_blue
 
 # Thai
-python create_map_poster.py -c "Bangkok" -C "Thailand" -dc "กรุงเทพมหานคร" -dC "ประเทศไทย" --font-family "Noto Sans Thai" -t sunset
+maptoposter-cli -c "Bangkok" -C "Thailand" -dc "กรุงเทพมหานคร" -dC "ประเทศไทย" --font-family "Noto Sans Thai" -t sunset
 
 # Arabic
-python create_map_poster.py -c "Dubai" -C "UAE" -dc "دبي" -dC "الإمارات" --font-family "Cairo" -t terracotta
+maptoposter-cli -c "Dubai" -C "UAE" -dc "دبي" -dC "الإمارات" --font-family "Cairo" -t terracotta
 
 # Chinese (Simplified)
-python create_map_poster.py -c "Beijing" -C "China" -dc "北京" -dC "中国" --font-family "Noto Sans SC"
+maptoposter-cli -c "Beijing" -C "China" -dc "北京" -dC "中国" --font-family "Noto Sans SC"
 
 # Khmer
-python create_map_poster.py -c "Phnom Penh" -C "Cambodia" -dc "ភ្នំពេញ" -dC "កម្ពុជា" --font-family "Noto Sans Khmer"
+maptoposter-cli -c "Phnom Penh" -C "Cambodia" -dc "ភ្នំពេញ" -dC "កម្ពុជា" --font-family "Noto Sans Khmer"
 ```
 
 #### Advanced Examples
 
 ```bash
 # Iconic grid patterns
-python create_map_poster.py -c "New York" -C "USA" -t noir -d 12000           # Manhattan grid
-python create_map_poster.py -c "Barcelona" -C "Spain" -t warm_beige -d 8000   # Eixample district
+maptoposter-cli -c "New York" -C "USA" -t noir -d 12000           # Manhattan grid
+maptoposter-cli -c "Barcelona" -C "Spain" -t warm_beige -d 8000   # Eixample district
 
 # Waterfront & canals
-python create_map_poster.py -c "Venice" -C "Italy" -t blueprint -d 4000       # Canal network
-python create_map_poster.py -c "Amsterdam" -C "Netherlands" -t ocean -d 6000  # Concentric canals
-python create_map_poster.py -c "Dubai" -C "UAE" -t midnight_blue -d 15000     # Palm & coastline
+maptoposter-cli -c "Venice" -C "Italy" -t blueprint -d 4000       # Canal network
+maptoposter-cli -c "Amsterdam" -C "Netherlands" -t ocean -d 6000  # Concentric canals
+maptoposter-cli -c "Dubai" -C "UAE" -t midnight_blue -d 15000     # Palm & coastline
 
 # Radial patterns
-python create_map_poster.py -c "Paris" -C "France" -t pastel_dream -d 10000   # Haussmann boulevards
-python create_map_poster.py -c "Moscow" -C "Russia" -t noir -d 12000          # Ring roads
+maptoposter-cli -c "Paris" -C "France" -t pastel_dream -d 10000   # Haussmann boulevards
+maptoposter-cli -c "Moscow" -C "Russia" -t noir -d 12000          # Ring roads
 
 # Organic old cities
-python create_map_poster.py -c "Tokyo" -C "Japan" -t japanese_ink -d 15000    # Dense organic streets
-python create_map_poster.py -c "Marrakech" -C "Morocco" -t terracotta -d 5000 # Medina maze
-python create_map_poster.py -c "Rome" -C "Italy" -t warm_beige -d 8000        # Ancient layout
+maptoposter-cli -c "Tokyo" -C "Japan" -t japanese_ink -d 15000    # Dense organic streets
+maptoposter-cli -c "Marrakech" -C "Morocco" -t terracotta -d 5000 # Medina maze
+maptoposter-cli -c "Rome" -C "Italy" -t warm_beige -d 8000        # Ancient layout
 
 # Coastal cities
-python create_map_poster.py -c "San Francisco" -C "USA" -t sunset -d 10000    # Peninsula grid
-python create_map_poster.py -c "Sydney" -C "Australia" -t ocean -d 12000      # Harbor city
-python create_map_poster.py -c "Mumbai" -C "India" -t contrast_zones -d 18000 # Coastal peninsula
+maptoposter-cli -c "San Francisco" -C "USA" -t sunset -d 10000    # Peninsula grid
+maptoposter-cli -c "Sydney" -C "Australia" -t ocean -d 12000      # Harbor city
+maptoposter-cli -c "Mumbai" -C "India" -t contrast_zones -d 18000 # Coastal peninsula
 
 # River cities
-python create_map_poster.py -c "London" -C "UK" -t noir -d 15000              # Thames curves
-python create_map_poster.py -c "Budapest" -C "Hungary" -t copper_patina -d 8000  # Danube split
+maptoposter-cli -c "London" -C "UK" -t noir -d 15000              # Thames curves
+maptoposter-cli -c "Budapest" -C "Hungary" -t copper_patina -d 8000  # Danube split
 
 # Override center coordinates
-python create_map_poster.py --city "New York" --country "USA" -lat 40.776676 -long -73.971321 -t noir
+maptoposter-cli --city "New York" --country "USA" -lat 40.776676 -long -73.971321 -t noir
 
 # List available themes
-python create_map_poster.py --list-themes
+maptoposter-cli --list-themes
 
 # Generate posters for every theme
-python create_map_poster.py -c "Tokyo" -C "Japan" --all-themes
+maptoposter-cli -c "Tokyo" -C "Japan" --all-themes
 ```
+
+### Batch Mode
+
+Generate multiple posters from a CSV or JSON file in one invocation:
+
+```bash
+maptoposter-cli --batch cities.csv
+```
+
+**CSV format** — must include `city` and `country` columns; optional columns: `theme`, `distance`, `dpi`, `width`, `height`, `format`, `display_city`, `display_country`, `font_family`.
+
+```csv
+city,country,theme,distance
+Paris,France,terracotta,9000
+Tokyo,Japan,japanese_ink,15000
+New York,USA,noir,12000
+```
+
+**JSON format** — a list of objects (or `{"cities": [...]}`) with the same keys:
+
+```json
+[
+  {"city": "Paris", "country": "France", "theme": "terracotta"},
+  {"city": "Tokyo", "country": "Japan", "theme": "japanese_ink"}
+]
+```
+
+### HTML Gallery
+
+After generating posters, produce a self-contained HTML gallery page:
+
+```bash
+maptoposter-cli --batch cities.csv --gallery
+```
+
+The gallery is written to the output directory as `gallery.html` and displays all PNG/SVG/PDF posters with their metadata (city, theme, dimensions) in a responsive CSS grid.
+
+### Cache Management
+
+OSM data and geocoding results are cached locally with TTL (7 days for map data, 30 days for coordinates). Manage the cache with:
+
+```bash
+# Show cache statistics (file count, total size)
+maptoposter-cli --cache-info
+
+# Delete all cached data
+maptoposter-cli --cache-clear
+```
+
+### Auto DPI Reduction
+
+If the requested DPI would cause memory usage to exceed 2 GB, the DPI is automatically reduced to the highest safe value (minimum 72). A warning is emitted when this occurs.
 
 ### Distance Guide
 
@@ -393,20 +484,37 @@ Create a JSON file in `themes/` directory:
 ## Project Structure
 
 ```text
-map_poster/
+maptoposter/
 ├── create_map_poster.py    # Legacy wrapper (calls maptoposter-cli)
+├── Dockerfile              # Multi-stage Docker build
 ├── src/
 │   └── maptoposter/
 │       ├── __init__.py     # Public programmatic API
+│       ├── _util.py        # StatusReporter, _emit_status, CacheError
+│       ├── batch.py        # CSV/JSON batch processing
 │       ├── cli.py          # CLI entry point (maptoposter-cli)
 │       ├── core.py         # Rendering + data fetching helpers
 │       ├── font_management.py  # Font loading and Google Fonts integration
+│       ├── gallery.py      # HTML gallery generator
+│       ├── geocoding.py    # Nominatim geocoding with tenacity retries
+│       ├── rendering.py    # Figure setup, render layers, typography
 │       ├── themes/         # Packaged themes (override via MAPTOPOSTER_THEMES_DIR)
 │       └── fonts/          # Bundled Roboto fonts
 ├── posters/                # Generated posters
 └── README.md
 ```
 
+
+## Docker
+
+A `Dockerfile` is provided for containerized usage:
+
+```bash
+docker build -t maptoposter .
+docker run --rm -v "$PWD/posters:/app/posters" maptoposter --city "Paris" --country "France"
+```
+
+Pre-built images are pushed to `ghcr.io/efrenpy/maptoposter` on each GitHub release.
 
 ## Hacker's Guide
 
@@ -416,7 +524,6 @@ Quick reference for contributors who want to extend or modify the script.
 
 - Bug fixes are welcomed
 - Don't submit user interface (web/desktop)
-- Don't Dockerize for now
 - If you vibe code any fix please test it and see before and after version of poster
 - Before embarking on a big feature please ask in Discussions/Issue if it will be merged
 

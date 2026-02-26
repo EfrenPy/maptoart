@@ -1,12 +1,12 @@
 [project]
 name = "maptoposter"
-version = "0.3.0"
+version = "0.4.0"
 description = "Generate beautiful, minimalist map posters for any city in the world."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "Ankur Gupta", email = "originalankur@github.com"}
+    {name = "Efren Rodriguez Rodriguez", email = "info@efrenrodriguezrodriguez.com"}
 ]
 keywords = ["map", "poster", "osm", "openstreetmap", "art", "visualization"]
 classifiers = [
@@ -22,47 +22,48 @@ classifiers = [
 ]
 
 dependencies = [
-    "certifi==2026.1.4",
-    "charset-normalizer==3.4.4",
-    "contourpy==1.3.3",
-    "cycler==0.12.1",
-    "fonttools==4.61.1",
-    "geographiclib==2.1",
-    "geopandas==1.1.2",
-    "geopy==2.4.1",
-    "idna==3.11",
-    "kiwisolver==1.4.9",
-    "lat-lon-parser==1.3.1",
-    "matplotlib==3.10.8",
-    "networkx==3.6.1",
-    "numpy==2.3.3",
-    "osmnx==2.0.7",
-    "packaging==25.0",
-    "pandas==2.3.3",
-    "pillow==12.1.0",
-    "pyogrio==0.12.1",
-    "pyparsing==3.3.1",
-    "pyproj==3.7.2",
-    "pyyaml==6.0.2",
-    "python-dateutil==2.9.0.post0",
-    "pytz==2025.2",
-    "requests==2.32.5",
-    "scipy==1.16.3",
-    "shapely==2.1.2",
-    "six==1.17.0",
-    "tqdm==4.67.1",
-    "tzdata==2025.3",
-    "urllib3==2.6.3",
+    "certifi~=2026.1.0",
+    "charset-normalizer~=3.4.0",
+    "contourpy~=1.3.0",
+    "cycler~=0.12.0",
+    "fonttools~=4.61.0",
+    "geographiclib~=2.1",
+    "geopandas~=1.1.0",
+    "geopy~=2.4.0",
+    "idna~=3.11",
+    "kiwisolver~=1.4.0",
+    "lat-lon-parser~=1.3.0",
+    "matplotlib~=3.10.0",
+    "networkx~=3.6.0",
+    "numpy~=2.3.0",
+    "osmnx~=2.0.0",
+    "packaging~=25.0",
+    "pandas~=2.3.0",
+    "pillow~=12.1.0",
+    "pyogrio~=0.12.0",
+    "pyparsing~=3.3.0",
+    "pyproj~=3.7.0",
+    "pyyaml~=6.0.0",
+    "python-dateutil~=2.9.0",
+    "pytz~=2025.2",
+    "requests~=2.32.0",
+    "scipy~=1.16.0",
+    "shapely~=2.1.0",
+    "six~=1.17.0",
+    "tenacity~=8.2.0",
+    "tqdm~=4.67.0",
+    "tzdata~=2025.3",
+    "urllib3~=2.6.0",
 ]
 
 [project.scripts]
 maptoposter-cli = "maptoposter.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/originalankur/maptoposter"
-Source = "https://github.com/originalankur/maptoposter"
-"Bug Tracker" = "https://github.com/originalankur/maptoposter/issues"
-Changelog = "https://github.com/originalankur/maptoposter/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/EfrenPy/maptoposter"
+Source = "https://github.com/EfrenPy/maptoposter"
+"Bug Tracker" = "https://github.com/EfrenPy/maptoposter/issues"
+Changelog = "https://github.com/EfrenPy/maptoposter/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
@@ -88,7 +89,7 @@ where = ["src"]
 maptoposter = ["themes/*.json", "fonts/*.ttf", "py.typed"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=maptoposter --cov-report=term-missing --cov-fail-under=85"
+addopts = "--cov=maptoposter --cov-report=term-missing --cov-fail-under=100"
 testpaths = ["tests"]
 markers = ["integration: end-to-end tests with real rendering"]
 
