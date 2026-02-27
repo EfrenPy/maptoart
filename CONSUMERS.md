@@ -7,7 +7,7 @@ This guide outlines the recommended ways to install and consume the `maptoposter
 Reference a tagged commit directly from Git when you need a reproducible build:
 
 ```bash
-pip install "git+https://github.com/EfrenPy/maptoposter.git@v0.2.0"
+pip install "git+https://github.com/EfrenPy/maptoposter.git@v0.5.0"
 ```
 
 If your environment uses SSH:
@@ -55,7 +55,23 @@ options = PosterGenerationOptions(
 generate_posters(options)
 ```
 
-See `examples/basic_python_usage.py` for a complete snippet plus logging hooks. A sample YAML config lives in `examples/config/poster.yaml` and mirrors every CLI flag.
+The snippet above shows the minimal API surface. Pass additional fields on `PosterGenerationOptions` (e.g. `dpi`, `distance`, `output_format`, `parallel_themes`, `max_theme_workers`) to customise output. See the `PosterGenerationOptions` dataclass docstring for all available fields.
+
+**Parallel rendering** — speed up multi-theme and batch workflows:
+
+```python
+from maptoposter import PosterGenerationOptions, generate_posters, run_batch
+
+# Parallel theme rendering (multiprocessing)
+options = PosterGenerationOptions(
+    city="Paris", country="France",
+    all_themes=True, parallel_themes=True, max_theme_workers=8,
+)
+generate_posters(options)
+
+# Parallel batch processing
+result = run_batch("cities.csv", parallel=True, max_workers=8)
+```
 
 ## 5. Packaging data
 

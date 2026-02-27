@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-02-27
+
+### Added
+
+**Parallelization:**
+- **Hoisted data fetching** — `generate_posters()` now calls `_fetch_map_data()` and `ox.project_graph()` once per city, reusing the results across all themes (previously repeated per theme)
+- **Parallel multi-theme rendering** — `--parallel-themes` flag renders multiple themes concurrently via `ProcessPoolExecutor` (matplotlib is not thread-safe, so multiprocessing is used)
+- **Pre-geocoding for batch** — all batch entries are geocoded upfront before processing, making cities independent for parallel execution
+- **Parallel batch processing** — `--parallel` flag processes batch cities concurrently via `ProcessPoolExecutor`; combine with `--max-workers N` to control concurrency (default: 4)
+
+**New CLI flags:**
+- **`--parallel-themes`** — render multiple themes in parallel using multiprocessing (opt-in)
+- **`--parallel`** — process batch cities in parallel using multiprocessing (opt-in)
+- **`--max-workers N`** — maximum number of parallel workers for batch processing (default: 4)
+
+**New `PosterGenerationOptions` fields:**
+- `parallel_themes: bool` — enable parallel theme rendering (default: `False`)
+- `max_theme_workers: int` — max workers for parallel themes (default: `4`)
+
+**New `run_batch()` parameters:**
+- `parallel: bool` — enable parallel batch processing (default: `False`)
+- `max_workers: int` — max workers for parallel batch (default: `4`)
+
+**Internal:**
+- `_render_theme_worker()` — top-level function for multiprocessing theme rendering
+- `_process_city_worker()` — top-level function for multiprocessing batch city processing
+- `_pre_geocode_batch()` — resolves coordinates for all batch entries before the main loop
+- `create_poster()` accepts `_prefetched_data` and `_projected_graph` params to skip redundant fetch/projection
+
+**Testing (414 tests, 100% coverage):**
+- Parallel theme rendering tests (worker function, ProcessPoolExecutor branch, failure handling)
+- Parallel batch processing tests (worker function, retries, unexpected exceptions)
+- CLI tests for `--parallel-themes`, `--parallel`, `--max-workers` flags
+
+### Changed
+- Deprecation warnings for `name_label` and `country_label` updated to target v0.6.0 (previously said v0.5.0)
+
+---
+
 ## [0.4.2] - 2026-02-26
 
 ### Fixed

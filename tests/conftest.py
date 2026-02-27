@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 from unittest.mock import patch
 
 import networkx as nx
@@ -19,9 +19,11 @@ def _clear_theme_cache() -> Iterator[None]:
     """Clear the theme cache before every test to prevent cross-test pollution."""
     with core._theme_cache_lock:
         core._theme_cache.clear()
+    core._get_available_themes_cached.cache_clear()
     yield
     with core._theme_cache_lock:
         core._theme_cache.clear()
+    core._get_available_themes_cached.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +40,7 @@ def silent_reporter() -> core.StatusReporter:
         def __init__(self) -> None:
             super().__init__(json_mode=True)
 
-        def emit(self, event: str, message: str | None = None, **extra):  # type: ignore[override]
+        def emit(self, event: str, message: str | None = None, **extra: Any) -> None:
             return None
 
     return _SilentReporter()

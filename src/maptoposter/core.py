@@ -15,6 +15,11 @@ MAPTOPOSTER_FONTS_CACHE
 MAPTOPOSTER_NOMINATIM_DELAY
     Rate-limit delay (seconds) before each Nominatim request (default: ``1``).
     Set to ``0`` for private Nominatim instances.
+
+``MAPTOPOSTER_THEMES_DIR``, ``MAPTOPOSTER_CACHE_DIR`` / ``CACHE_DIR``, and
+``MAPTOPOSTER_FONTS_DIR`` are read **at import time**.  Changes to these
+variables after the package has been imported have no effect.
+``MAPTOPOSTER_NOMINATIM_DELAY`` is read lazily on each geocoding call.
 """
 
 import difflib
@@ -27,12 +32,12 @@ import re
 import tempfile
 import threading
 import time
+import uuid
 import warnings
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Sequence, TypeVar, cast
 
@@ -40,10 +45,13 @@ import matplotlib.pyplot as plt
 import osmnx as ox
 from geopandas import GeoDataFrame
 from networkx import MultiDiGraph
-from osmnx._errors import InsufficientResponseError, ResponseStatusCodeError
+try:
+    from osmnx._errors import InsufficientResponseError, ResponseStatusCodeError
+except ImportError:  # pragma: no cover — osmnx may move these to a public module
+    from osmnx.errors import InsufficientResponseError, ResponseStatusCodeError
 from tqdm import tqdm
 
-from .font_management import load_fonts
+from .font_management import _get_fonts, load_fonts  # noqa: F401
 
 # Re-exports from _util (backward compat)
 from ._util import (  # noqa: F401
@@ -52,6 +60,7 @@ from ._util import (  # noqa: F401
     StatusReporter,
     TransientFetchError,
     _emit_status,
+    is_latin_script,
     CACHE_DIR,
     _CACHE_VERSION,
     _CACHE_TTL_COORDS,
@@ -63,6 +72,7 @@ from ._util import (  # noqa: F401
     cache_set,
     cache_clear,
     cache_info,
+    _atomic_write_text,
 )
 
 # Re-exports from geocoding (backward compat)
@@ -86,14 +96,9 @@ from .rendering import (  # noqa: F401
     create_gradient_fade,
     get_crop_limits,
     get_edge_colors_by_type,
+    get_edge_styles,
     get_edge_widths_by_type,
 )
-
-try:
-    _MAPTOPOSTER_VERSION = version("maptoposter")
-except PackageNotFoundError:  # pragma: no cover
-    _MAPTOPOSTER_VERSION = "0.0.0"
-
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_THEMES_DIR = PACKAGE_DIR / "themes"
@@ -153,12 +158,6 @@ _THEME_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _CITY_SLUG_RE = re.compile(r"[^\w\-]")
 
 
-@functools.lru_cache(maxsize=1)
-def _get_fonts() -> dict[str, str] | None:
-    """Lazy-load bundled fonts on first access."""
-    return load_fonts()
-
-
 _logger = logging.getLogger(__name__)
 
 
@@ -186,12 +185,21 @@ class PosterGenerationOptions:
     paper_size: str | None = None
     orientation: str = "portrait"
     output_dir: str | None = None
+    parallel_themes: bool = False
+    max_theme_workers: int = 4
 
     def __post_init__(self) -> None:
+        if not isinstance(self.city, str):
+            raise TypeError(f"city must be a string, got {type(self.city).__name__}")
+        if not isinstance(self.country, str):
+            raise TypeError(f"country must be a string, got {type(self.country).__name__}")
         if not self.city or not self.city.strip():
             raise ValueError("city must not be empty")
         if not self.country or not self.country.strip():
             raise ValueError("country must not be empty")
+        for _fname, _fval in [("distance", self.distance), ("width", self.width), ("height", self.height)]:
+            if not math.isfinite(_fval):
+                raise ValueError(f"{_fname} must be a finite number, got {_fval}")
         if self.distance <= 0:
             raise ValueError(f"distance must be positive, got {self.distance}")
         if self.distance > 100_000:
@@ -218,6 +226,8 @@ class PosterGenerationOptions:
             raise ValueError(
                 f"paper_size must be one of {sorted(PAPER_SIZES.keys())} or None, got '{self.paper_size}'"
             )
+        if self.max_theme_workers < 1:
+            raise ValueError(f"max_theme_workers must be at least 1, got {self.max_theme_workers}")
 
 
 def _apply_paper_size(
@@ -361,36 +371,6 @@ def _load_custom_fonts(
     return fonts
 
 
-def is_latin_script(text: str) -> bool:
-    """Check if text is primarily Latin script.
-
-    Used to determine if letter-spacing should be applied to city names.
-    """
-    if not text:
-        return True
-
-    latin_count = 0
-    total_alpha = 0
-
-    for char in text:
-        if char.isalpha():
-            total_alpha += 1
-            # Latin Unicode ranges:
-            # - Basic Latin: U+0000 to U+007F
-            # - Latin-1 Supplement: U+0080 to U+00FF
-            # - Latin Extended-A: U+0100 to U+017F
-            # - Latin Extended-B: U+0180 to U+024F
-            if ord(char) < 0x250:
-                latin_count += 1
-
-    # If no alphabetic characters, default to Latin (numbers, symbols, etc.)
-    if total_alpha == 0:
-        return True
-
-    # Consider it Latin if >80% of alphabetic characters are Latin
-    return (latin_count / total_alpha) > 0.8
-
-
 def generate_output_filename(
     city: str,
     theme_name: str,
@@ -404,10 +384,11 @@ def generate_output_filename(
     # Verify the directory is writable before proceeding
     if not os.access(resolved_dir, os.W_OK):
         raise PermissionError(f"Output directory is not writable: {resolved_dir}")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    city_slug = _CITY_SLUG_RE.sub("_", city.lower()).strip("_")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
+    city_slug = _CITY_SLUG_RE.sub("_", city.lower()).strip("_")[:50]
     ext = output_format.lower()
-    filename = f"{city_slug}_{theme_name}_{timestamp}.{ext}"
+    unique = uuid.uuid4().hex[:6]
+    filename = f"{city_slug}_{theme_name}_{timestamp}_{unique}.{ext}"
     return str(resolved_dir / filename)
 
 
@@ -441,7 +422,7 @@ def load_theme(
     with _theme_cache_lock:
         cached = _theme_cache.get(theme_name)
         if cached is not None:
-            return dict(cached)
+            return cached
 
     theme_file = THEMES_DIR / f"{theme_name}.json"
 
@@ -452,10 +433,25 @@ def load_theme(
             f"⚠ Theme file '{theme_file}' not found. Using default terracotta theme.",
             theme=theme_name,
         )
-        return dict(_TERRACOTTA_DEFAULTS)
+        fallback = dict(_TERRACOTTA_DEFAULTS)
+        with _theme_cache_lock:
+            _theme_cache[theme_name] = fallback
+        return fallback
 
-    with theme_file.open("r", encoding=FILE_ENCODING) as f:
-        theme = json.load(f)
+    try:
+        with theme_file.open("r", encoding=FILE_ENCODING) as f:
+            theme = json.load(f)
+    except json.JSONDecodeError as e:
+        _emit_status(
+            status_reporter,
+            "theme.fallback",
+            f"⚠ Theme file '{theme_file}' has invalid JSON: {e}. Using default terracotta theme.",
+            theme=theme_name,
+        )
+        fallback = dict(_TERRACOTTA_DEFAULTS)
+        with _theme_cache_lock:
+            _theme_cache[theme_name] = fallback
+        return fallback
 
     missing = REQUIRED_THEME_KEYS - theme.keys()
     if missing:
@@ -475,19 +471,24 @@ def load_theme(
             raise ValueError(f"Theme '{theme_name}': invalid color for '{key}': {val!r}")
 
     description = theme.get("description")
+    msg = f"✓ Loaded theme: {theme.get('name', theme_name)}"
+    if description:
+        msg += f"\n  {description}"
     _emit_status(
         status_reporter,
         "theme.loaded",
-        f"✓ Loaded theme: {theme.get('name', theme_name)}",
+        msg,
         theme=theme_name,
         description=description,
     )
-    if not status_reporter and description:
-        _emit_status(status_reporter, "theme.description", f"  {description}")
 
     with _theme_cache_lock:
-        _theme_cache[theme_name] = dict(theme)
-    return theme
+        existing = _theme_cache.get(theme_name)
+        if existing is not None:
+            return existing  # another thread already cached it
+        cached_copy = dict(theme)
+        _theme_cache[theme_name] = cached_copy
+    return cached_copy
 
 
 _T = TypeVar("_T")
@@ -503,7 +504,11 @@ def _cached_fetch(
     **event_kwargs: Any,
 ) -> _T | None:
     """Shared cache-check → download → cache-set → error-handling pattern."""
-    cached = cache_get(cache_key)
+    try:
+        cached = cache_get(cache_key, default_ttl=_CACHE_TTL_DATA)
+    except CacheError as e:
+        _logger.warning("Cache read failed for %s: %s", name, e)
+        cached = None
     if cached is not None:
         _emit_status(
             status_reporter,
@@ -608,7 +613,8 @@ def fetch_features(
         GeoDataFrame of features, or None if fetch fails
     """
     lat, lon = point
-    tag_str = "_".join(tags.keys())
+    tag_parts = sorted(f"{k}={v}" for k, v in tags.items())
+    tag_str = "_".join(tag_parts)
     key = f"{name}_{lat}_{lon}_{dist}_{tag_str}"
     return _cached_fetch(
         key,
@@ -632,7 +638,8 @@ def _fetch_map_data(
     # without excessive whitespace.  The divisor converts the full bounding
     # box span to a half-extent suitable for the crop limits calculation.
     _ASPECT_COMPENSATION_DIVISOR = 4
-    compensated_dist = dist * (max(height, width) / min(height, width)) / _ASPECT_COMPENSATION_DIVISOR
+    aspect_factor = min(max(height, width) / min(height, width), 4.0)
+    compensated_dist = dist * aspect_factor / _ASPECT_COMPENSATION_DIVISOR
 
     with tqdm(
         total=3,
@@ -644,7 +651,6 @@ def _fetch_map_data(
 
         def _do_graph():
             r = fetch_graph(point, compensated_dist, status_reporter=status_reporter)
-            pbar.update(1)
             return ("graph", r)
 
         def _do_water():
@@ -653,7 +659,6 @@ def _fetch_map_data(
                 tags={"natural": ["water", "bay", "strait"], "waterway": "riverbank"},
                 name="water", status_reporter=status_reporter,
             )
-            pbar.update(1)
             return ("water", r)
 
         def _do_parks():
@@ -662,7 +667,6 @@ def _fetch_map_data(
                 tags={"leisure": "park", "landuse": "grass"},
                 name="parks", status_reporter=status_reporter,
             )
-            pbar.update(1)
             return ("parks", r)
 
         results: dict[str, Any] = {}
@@ -677,8 +681,9 @@ def _fetch_map_data(
                 try:
                     key, val = future.result()
                     results[key] = val
-                except (RuntimeError, ValueError, OSError, ConnectionError) as exc:
-                    _logger.warning("Parallel fetch '%s' failed: %s", name, exc)
+                except Exception as exc:
+                    _logger.warning("Parallel fetch '%s' failed: %s", name, exc, exc_info=True)
+                pbar.update(1)  # always update from main thread (tqdm is not thread-safe)
 
     g = results.get("graph")
     water = results.get("water")
@@ -755,11 +760,9 @@ def _save_output(
     try:
         plt.savefig(tmp_path, format=fmt, **save_kwargs)
         Path(tmp_path).replace(target)
-    except OSError:
+    except Exception:
         Path(tmp_path).unlink(missing_ok=True)
         raise
-
-    plt.close(fig)
 
     if status_reporter:
         file_size = target.stat().st_size
@@ -790,6 +793,8 @@ def create_poster(
     fonts: dict[str, str] | None = None,
     show_attribution: bool = True,
     status_reporter: StatusReporter | None = None,
+    _prefetched_data: tuple[MultiDiGraph, GeoDataFrame | None, GeoDataFrame | None, float] | None = None,
+    _projected_graph: Any | None = None,
 ) -> None:
     """Generate a complete map poster with roads, water, parks, and typography.
 
@@ -807,7 +812,7 @@ def create_poster(
         width: Poster width in inches (default: 12).
         height: Poster height in inches (default: 16).
         dpi: Output resolution in dots per inch (default: 300).
-        country_label: Optional override for country text on poster.
+        country_label: Deprecated — use ``display_country`` instead.
         name_label: Deprecated — use ``display_city`` instead.
         display_city: Custom display name for city on poster.
         display_country: Custom display name for country on poster.
@@ -824,10 +829,30 @@ def create_poster(
         raise ValueError("city must be a non-empty string")
     if not country or not country.strip():
         raise ValueError("country must be a non-empty string")
+    if width <= 0:
+        raise ValueError(f"width must be positive, got {width}")
+    if height <= 0:
+        raise ValueError(f"height must be positive, got {height}")
+
+    # Enforce minimum DPI so direct callers get the same guard as generate_posters.
+    # Warn rather than silently clamp, so callers notice the change.
+    if dpi < 72:
+        _emit_status(
+            status_reporter, "dpi.clamped",
+            f"\u26a0 DPI {dpi} is below minimum; clamped to 72.",
+            original_dpi=dpi, clamped_dpi=72,
+        )
+    dpi = max(dpi, 72)
 
     if name_label is not None:
         warnings.warn(
-            "name_label is deprecated and will be removed in v0.5.0; use display_city instead",
+            "name_label is deprecated and will be removed in v0.6.0; use display_city instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    if country_label is not None:
+        warnings.warn(
+            "country_label is deprecated and will be removed in v0.6.0; use display_country instead",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -841,10 +866,13 @@ def create_poster(
         theme=theme.get("name", theme.get("id", "")),
     )
 
-    # 1. Fetch data
-    g, water, parks, compensated_dist = _fetch_map_data(
-        point, dist, width, height, status_reporter=status_reporter,
-    )
+    # 1. Fetch data (skip if pre-fetched for multi-theme runs)
+    if _prefetched_data is not None:
+        g, water, parks, compensated_dist = _prefetched_data
+    else:
+        g, water, parks, compensated_dist = _fetch_map_data(
+            point, dist, width, height, status_reporter=status_reporter,
+        )
 
     _emit_status(
         status_reporter, "poster.data.ready",
@@ -861,13 +889,15 @@ def create_poster(
                 f"Estimated memory {mem / 1024**3:.1f} GB exceeds 2 GB limit "
                 f"even at DPI 72. Reduce dimensions (currently {width}\" x {height}\")."
             )
+        new_mem = _estimate_memory(width, height, max_dpi)
         _emit_status(
             status_reporter, "dpi.auto_reduce",
-            f"\u26a0 DPI {dpi} would use {mem / 1024**3:.1f} GB. Auto-reducing to {max_dpi}.",
+            f"\u26a0 DPI {dpi} would use {mem / 1024**3:.1f} GB. "
+            f"Auto-reduced to {max_dpi} DPI ({new_mem / 1024**2:.0f} MB).",
             original_dpi=dpi, reduced_dpi=max_dpi,
         )
         dpi = max_dpi
-        mem = _estimate_memory(width, height, dpi)
+        mem = new_mem
     if mem > _WARN_MEMORY_BYTES:
         _emit_status(
             status_reporter, "memory.warning",
@@ -880,7 +910,7 @@ def create_poster(
     )
     fig, ax = _setup_figure(width, height, theme)
     try:
-        g_proj = ox.project_graph(g)
+        g_proj = _projected_graph if _projected_graph is not None else ox.project_graph(g)
 
         # 3. Render layers
         _render_layers(
@@ -904,17 +934,38 @@ def create_poster(
         plt.close(fig)
 
 
-def _atomic_write_text(target: Path, content: str) -> None:
-    """Write *content* to *target* atomically via a temp file + rename."""
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=str(target.parent))
-    try:
-        with os.fdopen(tmp_fd, "w", encoding=FILE_ENCODING) as fh:
-            fh.write(content)
-        Path(tmp_path).replace(target)
-    except OSError:
-        Path(tmp_path).unlink(missing_ok=True)
-        raise
+def _build_poster_metadata(
+    options: PosterGenerationOptions,
+    theme_name: str,
+    theme: dict[str, str],
+    output_file: str,
+    coords: tuple[float, float],
+    width: float,
+    height: float,
+    dpi: int,
+) -> dict[str, Any]:
+    """Build the metadata sidecar dict for a rendered poster."""
+    return {
+        "city": options.city,
+        "country": options.country,
+        "display_city": options.display_city or options.city,
+        "display_country": options.display_country or options.country_label or options.country,
+        "theme": theme_name,
+        "theme_description": theme.get("description"),
+        "output_file": output_file,
+        "output_format": options.output_format,
+        "width_in": width,
+        "height_in": height,
+        "dpi": dpi,
+        "distance_m": options.distance,
+        "latitude": coords[0],
+        "longitude": coords[1],
+        "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "show_attribution": options.show_attribution,
+        "paper_size": options.paper_size,
+        "orientation": options.orientation,
+        "font_family": options.font_family,
+    }
 
 
 def _write_metadata(output_file: str, metadata: dict[str, Any]) -> str:
@@ -952,21 +1003,60 @@ def create_poster_from_options(
         options.city, options.country, coords, options.distance,
         output_file, options.output_format,
         theme=theme, width=width, height=height, dpi=dpi,
-        display_city=options.display_city, display_country=options.display_country,
+        display_city=options.display_city,
+        display_country=options.display_country or options.country_label,
         fonts=custom_fonts, show_attribution=options.show_attribution,
         status_reporter=reporter,
     )
-    metadata = {
-        "city": options.city, "country": options.country,
-        "theme": theme_name, "output_file": output_file,
-        "output_format": options.output_format,
-        "width_in": width, "height_in": height, "dpi": dpi,
-        "distance_m": options.distance,
-        "latitude": coords[0], "longitude": coords[1],
-        "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-    }
+    metadata = _build_poster_metadata(
+        options, theme_name, theme, output_file, coords, width, height, dpi,
+    )
     _write_metadata(output_file, metadata)
     return output_file
+
+
+def _render_theme_worker(
+    city: str,
+    country: str,
+    coords: tuple[float, float],
+    distance: int,
+    output_file: str,
+    output_format: str,
+    theme_name: str,
+    width: float,
+    height: float,
+    dpi: int,
+    display_city: str | None,
+    display_country: str | None,
+    fonts: dict[str, str] | None,
+    show_attribution: bool,
+    prefetched_data: tuple[MultiDiGraph, GeoDataFrame | None, GeoDataFrame | None, float],
+    projected_graph: Any,
+    options_dict: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    """Worker function for parallel theme rendering (runs in a subprocess).
+
+    Returns (output_file, metadata_path, metadata_dict).
+    Must be a top-level function for pickle serialization.
+    """
+    theme = load_theme(theme_name)
+    create_poster(
+        city, country, coords, distance,
+        output_file, output_format,
+        theme=theme, width=width, height=height, dpi=dpi,
+        display_city=display_city,
+        display_country=display_country,
+        fonts=fonts,
+        show_attribution=show_attribution,
+        _prefetched_data=prefetched_data,
+        _projected_graph=projected_graph,
+    )
+    options = PosterGenerationOptions(**options_dict)
+    metadata = _build_poster_metadata(
+        options, theme_name, theme, output_file, coords, width, height, dpi,
+    )
+    metadata_path = _write_metadata(output_file, metadata)
+    return output_file, metadata_path, metadata
 
 
 def generate_posters(
@@ -992,6 +1082,16 @@ def generate_posters(
         _logger.warning("No custom or bundled fonts available; falling back to monospace")
     coords = _resolve_coordinates(options, reporter)
 
+    # Resolve deprecated fields early so create_poster doesn't emit warnings
+    # with a stacklevel pointing at our own code.
+    if options.country_label is not None:
+        warnings.warn(
+            "country_label is deprecated and will be removed in v0.6.0; use display_country instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    resolved_display_country = options.display_country or options.country_label
+
     reporter.debug_log(
         "Resolved config",
         width=width,
@@ -1013,65 +1113,108 @@ def generate_posters(
 
     output_dir = options.output_dir or os.environ.get(OUTPUT_DIR_ENV) or DEFAULT_POSTERS_DIR
 
+    # Hoist data fetching + graph projection so multi-theme runs don't repeat them
+    prefetched_data = _fetch_map_data(
+        coords, options.distance, width, height, status_reporter=reporter,
+    )
+    g_proj = ox.project_graph(prefetched_data[0])
+
     outputs: list[str] = []
     failures: list[str] = []
-    for theme_name in themes_to_generate:
-        theme = load_theme(theme_name, status_reporter=reporter)
-        output_file = generate_output_filename(
-            options.city,
-            theme_name,
-            options.output_format,
-            output_dir,
-        )
-        try:
-            create_poster(
-                options.city,
-                options.country,
-                coords,
-                options.distance,
-                output_file,
-                options.output_format,
-                theme=theme,
-                width=width,
-                height=height,
-                dpi=dpi,
-                country_label=options.country_label,
-                display_city=options.display_city,
-                display_country=options.display_country,
-                fonts=custom_fonts,
-                show_attribution=options.show_attribution,
-                status_reporter=reporter,
-            )
-        except (RuntimeError, ValueError, OSError) as exc:
-            _logger.warning("Theme '%s' failed: %s", theme_name, exc)
-            failures.append(theme_name)
-            continue
-        metadata = {
-            "city": options.city,
-            "country": options.country,
-            "theme": theme_name,
-            "theme_description": theme.get("description"),
-            "output_file": output_file,
-            "output_format": options.output_format,
-            "width_in": width,
-            "height_in": height,
-            "dpi": dpi,
-            "distance_m": options.distance,
-            "latitude": coords[0],
-            "longitude": coords[1],
-            "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+
+    use_parallel = (
+        options.parallel_themes
+        and len(themes_to_generate) > 1
+    )
+
+    if use_parallel:
+        # Build serialisable options dict for the worker (excludes non-picklable fields)
+        options_dict = {
+            "city": options.city, "country": options.country,
+            "distance": options.distance, "width": options.width,
+            "height": options.height, "dpi": options.dpi,
+            "output_format": options.output_format, "theme": options.theme,
             "show_attribution": options.show_attribution,
-            "paper_size": options.paper_size,
-            "orientation": options.orientation,
+            "paper_size": options.paper_size, "orientation": options.orientation,
+            "display_city": options.display_city,
+            "display_country": options.display_country or options.country_label,
             "font_family": options.font_family,
+            "output_dir": options.output_dir,
         }
-        metadata_path = _write_metadata(output_file, metadata)
-        reporter.emit(
-            "poster.metadata",
-            metadata_path=metadata_path,
-            output_file=output_file,
-        )
-        outputs.append(output_file)
+        n_workers = min(options.max_theme_workers, os.cpu_count() or 1, len(themes_to_generate))
+        theme_output_files = {
+            tn: generate_output_filename(options.city, tn, options.output_format, output_dir)
+            for tn in themes_to_generate
+        }
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            future_to_theme = {
+                executor.submit(
+                    _render_theme_worker,
+                    options.city, options.country, coords, options.distance,
+                    theme_output_files[tn], options.output_format, tn,
+                    width, height, dpi,
+                    options.display_city, resolved_display_country,
+                    custom_fonts, options.show_attribution,
+                    prefetched_data, g_proj, options_dict,
+                ): tn
+                for tn in themes_to_generate
+            }
+            for future in as_completed(future_to_theme):
+                theme_name = future_to_theme[future]
+                try:
+                    output_file, metadata_path, _meta = future.result()
+                    reporter.emit(
+                        "poster.metadata",
+                        metadata_path=metadata_path,
+                        output_file=output_file,
+                    )
+                    outputs.append(output_file)
+                except (RuntimeError, ValueError, OSError) as exc:
+                    _logger.warning("Theme '%s' failed: %s", theme_name, exc)
+                    failures.append(theme_name)
+    else:
+        for theme_name in themes_to_generate:
+            theme = load_theme(theme_name, status_reporter=reporter)
+            output_file = generate_output_filename(
+                options.city,
+                theme_name,
+                options.output_format,
+                output_dir,
+            )
+            try:
+                create_poster(
+                    options.city,
+                    options.country,
+                    coords,
+                    options.distance,
+                    output_file,
+                    options.output_format,
+                    theme=theme,
+                    width=width,
+                    height=height,
+                    dpi=dpi,
+                    display_city=options.display_city,
+                    display_country=resolved_display_country,
+                    fonts=custom_fonts,
+                    show_attribution=options.show_attribution,
+                    status_reporter=reporter,
+                    _prefetched_data=prefetched_data,
+                    _projected_graph=g_proj,
+                )
+            except (RuntimeError, ValueError, OSError) as exc:
+                _logger.warning("Theme '%s' failed: %s", theme_name, exc)
+                failures.append(theme_name)
+                continue
+            metadata = _build_poster_metadata(
+                options, theme_name, theme, output_file, coords, width, height, dpi,
+            )
+            metadata_path = _write_metadata(output_file, metadata)
+            reporter.emit(
+                "poster.metadata",
+                metadata_path=metadata_path,
+                output_file=output_file,
+            )
+            outputs.append(output_file)
 
     if failures:
         reporter.emit(
@@ -1132,7 +1275,7 @@ Examples:
 Options:
   --city, -c        City name (required)
   --country, -C     Country name (required)
-  --country-label   Override country text displayed on poster
+  --display-country Override country text displayed on poster
   --theme, -t       Theme name (default: terracotta)
   --all-themes      Generate posters for all themes
   --distance, -d    Map radius in meters (default: 18000)

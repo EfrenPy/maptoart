@@ -1,4 +1,10 @@
-"""Shared utilities for the maptoposter package (no internal imports)."""
+"""Shared utilities for the maptoposter package (no internal imports).
+
+Environment variables read at **import time** (changes after import are ignored):
+
+* ``MAPTOPOSTER_CACHE_DIR`` / ``CACHE_DIR`` — directory for OSM data cache
+  (default: ``./cache``).
+"""
 
 import hashlib
 import hmac
@@ -7,8 +13,9 @@ import json
 import logging
 import os
 import pickle
+import re
+import tempfile
 import time
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from collections.abc import Callable
@@ -95,7 +102,32 @@ def _emit_status(
         print(message)
 
 
+def is_latin_script(text: str) -> bool:
+    """Check if text is primarily Latin script.
+
+    Used to determine if letter-spacing should be applied to city names.
+    """
+    if not text:
+        return True
+
+    latin_count = 0
+    total_alpha = 0
+
+    for char in text:
+        if char.isalpha():
+            total_alpha += 1
+            if ord(char) < 0x0250 or 0x1E00 <= ord(char) <= 0x1EFF:
+                latin_count += 1
+
+    if total_alpha == 0:
+        return True
+
+    return (latin_count / total_alpha) > 0.8
+
+
 _logger = logging.getLogger(__name__)
+
+MAX_INPUT_FILE_SIZE = 1_048_576  # 1 MB — shared limit for config/batch files
 
 CACHE_DIR_PATH = os.environ.get("MAPTOPOSTER_CACHE_DIR", os.environ.get("CACHE_DIR", "cache"))
 CACHE_DIR = Path(CACHE_DIR_PATH)
@@ -110,6 +142,19 @@ _CACHE_TTL_DATA = 7 * 24 * 3600      # 7 days
 _MAX_CACHE_KEY_LEN = 180  # keep total path under filesystem limits
 
 
+def _atomic_write_text(target: Path, content: str) -> None:
+    """Write *content* to *target* atomically via a temp file + rename."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=str(target.parent))
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        Path(tmp_path).replace(target)
+    except Exception:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
+
+
 def _cache_path(key: str) -> Path:
     """
     Generate a safe cache file path from a cache key.
@@ -120,7 +165,7 @@ def _cache_path(key: str) -> Path:
     Returns:
         Path to cache file with .pkl extension
     """
-    safe = key.replace(os.sep, "_")
+    safe = re.sub(r'[^\w\-.]', '_', key)
     if len(safe) > _MAX_CACHE_KEY_LEN:
         suffix = hashlib.sha256(safe.encode()).hexdigest()[:16]
         safe = safe[:_MAX_CACHE_KEY_LEN] + "_" + suffix
@@ -128,8 +173,27 @@ def _cache_path(key: str) -> Path:
 
 
 def _cache_hmac_key() -> bytes:
-    """Machine-local HMAC key derived from MAC address."""
-    return uuid.getnode().to_bytes(8, "big")
+    """Return a random HMAC key, generating one on first use.
+
+    The key is stored in ``CACHE_DIR/.hmac_key``.  If the file does not
+    exist, a fresh 32-byte random key is generated and persisted.
+    Uses ``O_CREAT | O_EXCL`` to avoid a TOCTOU race when multiple
+    processes start concurrently on a fresh cache directory.
+    """
+    key_path = CACHE_DIR / ".hmac_key"
+    try:
+        return key_path.read_bytes()
+    except FileNotFoundError:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        key = os.urandom(32)
+        try:
+            fd = os.open(str(key_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            os.write(fd, key)
+            os.close(fd)
+        except FileExistsError:
+            # Another process created it first; read their key.
+            return key_path.read_bytes()
+        return key
 
 
 def _compute_file_hmac(path_or_data: str | Path | bytes) -> str:
@@ -145,17 +209,23 @@ def _compute_file_hmac(path_or_data: str | Path | bytes) -> str:
 
 
 class _RestrictedUnpickler(pickle.Unpickler):
-    """Only allow safe types from our cache files."""
+    """Only allow safe types from our cache files.
 
-    _ALLOWED_MODULES: ClassVar[frozenset[str]] = frozenset({
-        "builtins", "collections", "datetime", "numpy", "numpy.core",
-        "numpy.core.multiarray", "pandas", "pandas.core", "geopandas",
-        "shapely", "networkx", "pyproj", "numpy.core.numeric",
+    Cached objects include ``MultiDiGraph``, ``GeoDataFrame``, coordinate
+    tuples, and their transitive dependencies (numpy arrays, shapely
+    geometries, pyproj CRS, pandas internals).
+    """
+
+    # Top-level module prefixes considered safe for deserialization.
+    _ALLOWED_TOP_MODULES: ClassVar[frozenset[str]] = frozenset({
+        "builtins", "collections", "copy_reg", "copyreg",
+        "datetime", "numpy", "pandas", "geopandas",
+        "shapely", "networkx", "pyproj", "_codecs",
     })
 
     def find_class(self, module: str, name: str) -> type:
         top = module.split(".")[0]
-        if top in self._ALLOWED_MODULES:
+        if top in self._ALLOWED_TOP_MODULES:
             return super().find_class(module, name)
         raise pickle.UnpicklingError(
             f"Blocked unpickling of {module}.{name}"
@@ -198,14 +268,17 @@ def cache_get(key: str, *, default_ttl: int | None = None) -> Any:
         if meta_path.exists():
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                ttl = meta.get("ttl") or default_ttl
+                ttl = meta.get("ttl")
+                if ttl is None:
+                    ttl = default_ttl
                 if ttl is not None:
                     created = meta.get("created", 0)
                     if time.time() - created > ttl:
                         _logger.info("Cache entry '%s' expired (TTL=%ds)", key, ttl)
                         return None
             except (json.JSONDecodeError, KeyError):
-                _logger.warning("Corrupt metadata for '%s', ignoring TTL", key)
+                _logger.warning("Corrupt metadata for '%s', treating as miss", key)
+                return None  # Can't verify age with corrupt metadata
         elif default_ttl is not None:
             # No metadata but TTL requested — can't verify age, treat as miss
             return None
@@ -231,25 +304,37 @@ def cache_set(key: str, value: Any, *, ttl: int | None = None) -> None:
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         path = _cache_path(key)
-        with path.open("wb") as f:
-            pickle.dump(value, f, protocol=pickle.HIGHEST_PROTOCOL)
-        sig = _compute_file_hmac(path)
-        Path(f"{path}.sig").write_text(sig, encoding="utf-8")
-        # Write metadata sidecar
-        meta = {
-            "created": time.time(),
-            "ttl": ttl,
-            "cache_version": _CACHE_VERSION,
-        }
-        Path(f"{path}.meta").write_text(
-            json.dumps(meta, ensure_ascii=False), encoding="utf-8",
+        # Serialize to bytes first, compute HMAC, then write atomically.
+        # This avoids a TOCTOU race where the file could be modified between
+        # the atomic rename and the HMAC computation.
+        data = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+        sig = _compute_file_hmac(data)
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            suffix=".tmp", dir=str(CACHE_DIR),
         )
+        try:
+            with os.fdopen(tmp_fd, "wb") as f:
+                f.write(data)
+            Path(tmp_path).replace(path)
+        except Exception:
+            Path(tmp_path).unlink(missing_ok=True)
+            raise
+        _atomic_write_text(Path(f"{path}.sig"), sig)
+        meta_json = json.dumps(
+            {"created": time.time(), "ttl": ttl, "cache_version": _CACHE_VERSION},
+            ensure_ascii=False,
+        )
+        _atomic_write_text(Path(f"{path}.meta"), meta_json)
     except (OSError, pickle.PicklingError, ValueError) as e:
         raise CacheError(f"Cache write failed: {e}") from e
 
 
 def cache_clear() -> int:
-    """Remove all cache files. Returns count of files removed."""
+    """Remove all cache files. Returns count of files removed.
+
+    Note: The ``.hmac_key`` file is preserved so that any surviving
+    cache entries written by concurrent processes remain verifiable.
+    """
     if not CACHE_DIR.exists():
         return 0
     count = 0

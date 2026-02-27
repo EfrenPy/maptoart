@@ -3,12 +3,13 @@ Font Management Module
 Handles font loading, Google Fonts integration, and caching.
 """
 
-import json
+import functools
 import logging
 import os
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
@@ -23,10 +24,29 @@ FONTS_DIR = Path(os.environ.get("MAPTOPOSTER_FONTS_DIR", str(DEFAULT_FONTS_DIR))
 FONTS_CACHE_DIR = DEFAULT_CACHE_DIR
 
 _RETRYABLE_HTTP_CODES = {429, 500, 502, 503}
+_TRUSTED_FONT_DOMAINS = ("fonts.gstatic.com", "fonts.googleapis.com")
+_MAX_FONT_FILE_SIZE = 10 * 1024 * 1024  # 10 MB per font file
 
 
 class _RetryableHTTPError(Exception):
     """Raised for HTTP status codes that should be retried."""
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(1),
+    retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout, _RetryableHTTPError)),
+    reraise=True,
+)
+def _fetch_font_css(url: str, params: dict[str, str], headers: dict[str, str], timeout: int = 10) -> str:
+    """Fetch Google Fonts CSS with automatic retry on transient errors."""
+    resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+    _logger.debug("Font CSS %s → HTTP %d", url, resp.status_code)
+    if resp.status_code in _RETRYABLE_HTTP_CODES:
+        _logger.warning("Retryable HTTP %d from %s", resp.status_code, url)
+        raise _RetryableHTTPError(f"HTTP {resp.status_code}")
+    resp.raise_for_status()
+    return resp.text
 
 
 @retry(
@@ -43,6 +63,11 @@ def _download_font_file(url: str, timeout: int = 10) -> bytes:
         _logger.warning("Retryable HTTP %d from %s", resp.status_code, url)
         raise _RetryableHTTPError(f"HTTP {resp.status_code}")
     resp.raise_for_status()
+    if len(resp.content) > _MAX_FONT_FILE_SIZE:
+        raise ValueError(
+            f"Font file from {url} exceeds size limit "
+            f"({len(resp.content)} bytes, max {_MAX_FONT_FILE_SIZE})"
+        )
     return resp.content
 
 
@@ -66,6 +91,30 @@ def download_google_font(font_family: str, weights: list[int] | None = None) -> 
 
     font_files = {}
 
+    # Map weights to our keys
+    weight_map = {300: "light", 400: "regular", 700: "bold"}
+
+    # Check if all requested weights are already cached, avoiding the HTTP call
+    all_cached = True
+    for weight in weights:
+        weight_key = weight_map.get(weight, "regular")
+        found = False
+        for ext in ("woff2", "ttf"):
+            candidate = FONTS_CACHE_DIR / f"{font_name_safe}_{weight_key}.{ext}"
+            if candidate.exists():
+                font_files[weight_key] = str(candidate)
+                found = True
+                break
+        if not found:
+            all_cached = False
+            break
+
+    if all_cached and font_files:
+        _logger.debug("All %s fonts cached, skipping CSS fetch", font_family)
+        return font_files
+
+    font_files = {}  # reset; will be populated from the download path
+
     try:
         # Google Fonts API endpoint - request all weights at once
         weights_str = ";".join(map(str, weights))
@@ -77,10 +126,8 @@ def download_google_font(font_family: str, weights: list[int] | None = None) -> 
             "User-Agent": "Mozilla/5.0"  # Get .woff2 files (better compression)
         }
 
-        # Fetch CSS file
-        response = requests.get(api_url, params=params, headers=headers, timeout=10)
-        response.raise_for_status()
-        css_content = response.text
+        # Fetch CSS file (with retry on transient errors)
+        css_content = _fetch_font_css(api_url, params=params, headers=headers)
 
         # Parse CSS to extract weight-specific URLs
         # Google Fonts CSS has @font-face blocks with font-weight and src: url()
@@ -102,9 +149,6 @@ def download_google_font(font_family: str, weights: list[int] | None = None) -> 
             if url_match:
                 weight_url_map[weight] = url_match.group(1)
 
-        # Map weights to our keys
-        weight_map = {300: "light", 400: "regular", 700: "bold"}
-
         # Download each weight
         for weight in weights:
             weight_key = weight_map.get(weight, "regular")
@@ -125,6 +169,15 @@ def download_google_font(font_family: str, weights: list[int] | None = None) -> 
                 )
 
             if weight_url:
+                # Validate URL domain for safety
+                parsed = urlparse(weight_url)
+                if parsed.hostname not in _TRUSTED_FONT_DOMAINS:
+                    _logger.warning(
+                        "Skipping font URL from untrusted domain: %s",
+                        parsed.hostname,
+                    )
+                    continue
+
                 # Determine file extension
                 file_ext = "woff2" if weight_url.endswith(".woff2") else "ttf"
 
@@ -170,7 +223,7 @@ def download_google_font(font_family: str, weights: list[int] | None = None) -> 
 
         return font_files if font_files else None
 
-    except (requests.ConnectionError, requests.Timeout) as e:
+    except (requests.ConnectionError, requests.Timeout, _RetryableHTTPError) as e:
         _logger.warning(
             "Network error downloading Google Font '%s': %s. Check your internet connection.",
             font_family, e,
@@ -182,7 +235,7 @@ def download_google_font(font_family: str, weights: list[int] | None = None) -> 
         else:
             _logger.warning("HTTP error downloading Google Font '%s': %s", font_family, e)
         return None
-    except (requests.RequestException, OSError, json.JSONDecodeError) as e:
+    except (requests.RequestException, OSError, ValueError) as e:
         _logger.warning("Error downloading Google Font '%s': %s", font_family, e)
         return None
 
@@ -221,6 +274,12 @@ def load_fonts(font_family: str | None = None) -> dict[str, str] | None:
             return None
 
     return fonts
+
+
+@functools.lru_cache(maxsize=1)
+def _get_fonts() -> dict[str, str] | None:
+    """Lazy-load bundled fonts on first access (cached)."""
+    return load_fonts()
 
 
 def get_active_fonts(font_family: str | None = None) -> dict[str, Any]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import time
 from importlib.metadata import PackageNotFoundError, version
@@ -28,7 +29,34 @@ except PackageNotFoundError:  # pragma: no cover
 
 # Nominatim usage policy requires max 1 request/second.  Configurable via
 # MAPTOPOSTER_NOMINATIM_DELAY for testing or when using a private instance.
-_NOMINATIM_DELAY: float = float(os.environ.get("MAPTOPOSTER_NOMINATIM_DELAY", "1"))
+_NOMINATIM_DELAY_DEFAULT = 1.0
+
+
+def _nominatim_delay() -> float:
+    """Return the configured Nominatim rate-limit delay (lazy env-var read)."""
+    raw = os.environ.get("MAPTOPOSTER_NOMINATIM_DELAY")
+    if raw is None:
+        return _NOMINATIM_DELAY_DEFAULT
+    try:
+        val = float(raw)
+        if not math.isfinite(val):
+            _logger.warning(
+                "MAPTOPOSTER_NOMINATIM_DELAY=%r is not finite, using default %.1fs",
+                raw, _NOMINATIM_DELAY_DEFAULT,
+            )
+            return _NOMINATIM_DELAY_DEFAULT
+        if val < 0:
+            _logger.warning(
+                "MAPTOPOSTER_NOMINATIM_DELAY=%r is negative, clamping to 0.0",
+                raw,
+            )
+        return max(0.0, val)
+    except ValueError:
+        _logger.warning(
+            "Invalid MAPTOPOSTER_NOMINATIM_DELAY=%r, using default %.1fs",
+            raw, _NOMINATIM_DELAY_DEFAULT,
+        )
+        return _NOMINATIM_DELAY_DEFAULT
 
 
 @retry(
@@ -64,6 +92,7 @@ def _resolve_coordinates(
         )
 
     if has_lat and has_lon:
+        assert options.latitude is not None and options.longitude is not None  # narrowing
         result = (options.latitude, options.longitude)
     else:
         result = get_coordinates(
@@ -87,8 +116,12 @@ def get_coordinates(
     Includes rate limiting to be respectful to the geocoding service.
     """
     coords = f"coords_{city.lower()}_{country.lower()}"
-    cached = cache_get(coords)
-    if cached:
+    try:
+        cached = cache_get(coords, default_ttl=_CACHE_TTL_COORDS)
+    except CacheError as e:
+        _logger.warning("Cache read failed for coordinates: %s", e)
+        cached = None
+    if cached is not None:
         _emit_status(
             status_reporter,
             "geocode.cache_hit",
@@ -111,7 +144,7 @@ def get_coordinates(
     )
 
     # Rate-limit to respect Nominatim's usage policy
-    time.sleep(_NOMINATIM_DELAY)
+    time.sleep(_nominatim_delay())
 
     try:
         location = _geocode_with_retry(geolocator, f"{city}, {country}")
@@ -132,14 +165,18 @@ def get_coordinates(
         try:
             location = asyncio.run(location)
         except RuntimeError as exc:
-            # If an event loop is already running, try using it to complete the coroutine.
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
+            # asyncio.run() fails when a loop is already running; fall back
+            # to a new loop to avoid the deprecated get_event_loop() API.
+            loop = asyncio.new_event_loop()
+            try:
+                location = loop.run_until_complete(location)
+            except RuntimeError:
                 raise RuntimeError(
-                    "Geocoder returned a coroutine while an event loop is already running. "
+                    "Geocoder returned a coroutine but no event loop is available. "
                     "Run this script in a synchronous environment."
                 ) from exc
-            location = loop.run_until_complete(location)
+            finally:
+                loop.close()
 
     if location:
         addr = getattr(location, "address", None)
@@ -175,5 +212,6 @@ def get_coordinates(
     )
     raise ValueError(
         f"Could not find coordinates for {city}, {country}. "
-        "Verify the city and country spelling."
+        "Verify the city and country spelling, or use "
+        "--latitude and --longitude to specify coordinates directly."
     )

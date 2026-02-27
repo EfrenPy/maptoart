@@ -1,0 +1,44 @@
+# Version control
+.git/
+.gitignore
+
+# Virtual environments
+.venv/
+venv/
+
+# Cache and generated output
+cache/
+posters/
+htmlcov/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE and tool caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Sensitive files
+.env
+.env.*
+*.key
+
+# Documentation and CI (not needed in image)
+.github/
+*.md
+AGENTS.md
+CONSUMERS.md
+CHANGELOG.md
+LICENSE
+test/
+tests/
+
+# Lock files
+uv.lock

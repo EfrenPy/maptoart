@@ -12,7 +12,8 @@ from matplotlib.font_manager import FontProperties
 from networkx import MultiDiGraph
 from shapely.geometry import Point
 
-from ._util import StatusReporter, _emit_status
+from ._util import StatusReporter, _emit_status, is_latin_script
+from .font_management import _get_fonts
 
 _logger = logging.getLogger(__name__)
 
@@ -99,56 +100,63 @@ def create_gradient_fade(ax: Any, color: str, location: str = "bottom", zorder: 
     )
 
 
+# Road hierarchy: maps OSM highway tags to (theme color key, line width).
+# Ordered from most to least important road type.
+_ROAD_HIERARCHY: list[tuple[frozenset[str], str, float]] = [
+    (frozenset({"motorway", "motorway_link"}), "road_motorway", 1.2),
+    (frozenset({"trunk", "trunk_link", "primary", "primary_link"}), "road_primary", 1.0),
+    (frozenset({"secondary", "secondary_link"}), "road_secondary", 0.8),
+    (frozenset({"tertiary", "tertiary_link"}), "road_tertiary", 0.6),
+    (frozenset({"residential", "living_street", "unclassified"}), "road_residential", 0.4),
+]
+_DEFAULT_ROAD_COLOR_KEY = "road_default"
+_DEFAULT_ROAD_WIDTH = 0.4
+
+
+_UNKNOWN_HIGHWAY = ""  # sentinel: falls through _ROAD_HIERARCHY to road_default
+
+
+def _classify_highway(data: dict[str, Any]) -> str:
+    """Extract and normalize the highway tag from an edge data dict."""
+    highway = data.get("highway", _UNKNOWN_HIGHWAY)
+    if isinstance(highway, list):
+        highway = highway[0] if highway else _UNKNOWN_HIGHWAY
+    return highway
+
+
+def get_edge_styles(
+    g: MultiDiGraph, theme: dict[str, str],
+) -> tuple[list[str], list[float]]:
+    """Classify edges once, returning (colors, widths) in a single pass."""
+    colors: list[str] = []
+    widths: list[float] = []
+    for _u, _v, data in g.edges(data=True):
+        highway = _classify_highway(data)
+        color = theme[_DEFAULT_ROAD_COLOR_KEY]
+        width = _DEFAULT_ROAD_WIDTH
+        for tags, color_key, w in _ROAD_HIERARCHY:
+            if highway in tags:
+                color = theme[color_key]
+                width = w
+                break
+        colors.append(color)
+        widths.append(width)
+    return colors, widths
+
+
+# Backward-compatible wrappers
 def get_edge_colors_by_type(g: MultiDiGraph, theme: dict[str, str]) -> list[str]:
     """Assigns colors to edges based on road type hierarchy."""
-    edge_colors = []
-
-    for _u, _v, data in g.edges(data=True):
-        highway = data.get('highway', 'unclassified')
-        if isinstance(highway, list):
-            highway = highway[0] if highway else 'unclassified'
-
-        if highway in ["motorway", "motorway_link"]:
-            color = theme["road_motorway"]
-        elif highway in ["trunk", "trunk_link", "primary", "primary_link"]:
-            color = theme["road_primary"]
-        elif highway in ["secondary", "secondary_link"]:
-            color = theme["road_secondary"]
-        elif highway in ["tertiary", "tertiary_link"]:
-            color = theme["road_tertiary"]
-        elif highway in ["residential", "living_street", "unclassified"]:
-            color = theme["road_residential"]
-        else:
-            color = theme['road_default']
-
-        edge_colors.append(color)
-
-    return edge_colors
+    return get_edge_styles(g, theme)[0]
 
 
 def get_edge_widths_by_type(g: MultiDiGraph) -> list[float]:
     """Assigns line widths to edges based on road type."""
-    edge_widths = []
-
-    for _u, _v, data in g.edges(data=True):
-        highway = data.get('highway', 'unclassified')
-        if isinstance(highway, list):
-            highway = highway[0] if highway else 'unclassified'
-
-        if highway in ["motorway", "motorway_link"]:
-            width = 1.2
-        elif highway in ["trunk", "trunk_link", "primary", "primary_link"]:
-            width = 1.0
-        elif highway in ["secondary", "secondary_link"]:
-            width = 0.8
-        elif highway in ["tertiary", "tertiary_link"]:
-            width = 0.6
-        else:
-            width = 0.4
-
-        edge_widths.append(width)
-
-    return edge_widths
+    # Dummy theme — colors are discarded, only widths returned.
+    _dummy = {_DEFAULT_ROAD_COLOR_KEY: "#000000"}
+    for tags, color_key, _w in _ROAD_HIERARCHY:
+        _dummy[color_key] = "#000000"
+    return get_edge_styles(g, _dummy)[1]
 
 
 def get_crop_limits(
@@ -230,8 +238,7 @@ def _render_layers(
     _project_and_plot_layer(parks, target_crs, ax, theme["parks"], _ZORDER["parks"], "parks")
 
     _emit_status(status_reporter, "poster.roads", "Applying road hierarchy colors...")
-    edge_colors = get_edge_colors_by_type(g_proj, theme)
-    edge_widths = get_edge_widths_by_type(g_proj)
+    edge_colors, edge_widths = get_edge_styles(g_proj, theme)
 
     crop_xlim, crop_ylim = get_crop_limits(g_proj, point, fig, compensated_dist)
     ox.plot_graph(
@@ -264,8 +271,6 @@ def _apply_typography(
     show_attribution: bool = True,
 ) -> None:
     """Scale fonts, render city/country/coords/attribution text."""
-    from .core import _get_fonts, is_latin_script
-
     scale_factor = min(height, width) / 12.0
     base_main = _BASE_FONT_CITY
     base_sub = _BASE_FONT_COUNTRY
@@ -330,11 +335,6 @@ def _apply_typography(
     )
 
     if show_attribution:
-        attr_fonts = active_fonts or _get_fonts()
-        if attr_fonts and "light" in attr_fonts:
-            font_attr = FontProperties(fname=attr_fonts["light"], size=_BASE_FONT_ATTR)
-        else:
-            font_attr = FontProperties(family="monospace", size=_BASE_FONT_ATTR)
         ax.text(
             0.98, 0.02, "\u00a9 OpenStreetMap contributors",
             transform=ax.transAxes, color=theme["text"], alpha=0.5,

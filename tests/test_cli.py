@@ -171,6 +171,22 @@ class TestConfigFileLoading:
         with pytest.raises(FileNotFoundError, match="not found"):
             cli._build_options_from_sources(parser, args)
 
+    def test_malformed_json_config(self, tmp_path: Path) -> None:
+        cfg = tmp_path / "bad.json"
+        cfg.write_text("{not valid json", encoding="utf-8")
+        parser = _build_parser()
+        args = _prepare_args(parser, ["--config", str(cfg)])
+        with pytest.raises(ValueError, match="invalid syntax"):
+            cli._build_options_from_sources(parser, args)
+
+    def test_malformed_yaml_config(self, tmp_path: Path) -> None:
+        cfg = tmp_path / "bad.yaml"
+        cfg.write_text("key: [unclosed\n  - bad", encoding="utf-8")
+        parser = _build_parser()
+        args = _prepare_args(parser, ["--config", str(cfg)])
+        with pytest.raises(ValueError, match="invalid syntax"):
+            cli._build_options_from_sources(parser, args)
+
 
 class TestDryRun:
     """Tests for --dry-run flag."""
@@ -209,7 +225,7 @@ class TestConfigFileSizeLimit:
     def test_oversized_config_raises(self, tmp_path: Path) -> None:
         cfg = tmp_path / "huge.json"
         # Write just over 1 MB
-        cfg.write_text("x" * (cli._MAX_CONFIG_SIZE + 1), encoding="utf-8")
+        cfg.write_text("x" * (cli.MAX_INPUT_FILE_SIZE + 1), encoding="utf-8")
 
         with pytest.raises(ValueError, match="too large"):
             cli._load_config_file(cfg)
@@ -276,6 +292,15 @@ class TestCacheClearFlag:
         output = capsys.readouterr().out
         assert "5" in output
 
+    @patch("maptoposter.core.cache_clear", return_value=0)
+    def test_cache_clear_empty(
+        self, mock_clear: MagicMock, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        result = cli.main(["--cache-clear"])
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "already empty" in output
+
 
 class TestCacheInfoFlag:
     """Tests for --cache-info flag."""
@@ -303,6 +328,29 @@ class TestBatchCLI:
         result = cli.main(["--batch", str(csv_file), "--city", "X", "--country", "Y"])
         assert result == 0
         mock_batch.assert_called_once()
+        # Verify city/country are stripped from global_overrides (batch entries provide them)
+        overrides = mock_batch.call_args.kwargs.get("global_overrides", {})
+        assert "city" not in overrides
+        assert "country" not in overrides
+
+    @patch("maptoposter.batch.run_batch", return_value={"total": 2, "successes": [], "failures": []})
+    def test_batch_dry_run_passes_flag(self, mock_batch: MagicMock, tmp_path: Path) -> None:
+        csv_file = tmp_path / "cities.csv"
+        csv_file.write_text("city,country\nParis,France\nTokyo,Japan\n")
+        result = cli.main(["--batch", str(csv_file), "--dry-run"])
+        assert result == 0
+        mock_batch.assert_called_once()
+        assert mock_batch.call_args.kwargs["dry_run"] is True
+
+
+class TestVersionFlag:
+    """Tests for --version flag."""
+
+    def test_version_flag(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit, match="0"):
+            cli.main(["--version"])
+        output = capsys.readouterr().out
+        assert "maptoposter-cli" in output
 
 
 class TestCLIHelpText:
@@ -438,3 +486,81 @@ class TestGeneratePostersValueError:
         output = capsys.readouterr().out
         assert "Configuration error" in output
         assert "bad config" in output
+
+
+class TestConfigStringNumericCoercion:
+    """Config values with string-typed numerics are coerced to correct types."""
+
+    def test_string_distance_coerced_to_int(self) -> None:
+        raw = {"city": "Paris", "country": "France", "distance": "18000"}
+        result = cli._normalize_config_data(raw)
+        assert result["distance"] == 18000
+        assert isinstance(result["distance"], int)
+
+    def test_string_dpi_coerced_to_int(self) -> None:
+        raw = {"city": "Paris", "country": "France", "dpi": "300"}
+        result = cli._normalize_config_data(raw)
+        assert result["dpi"] == 300
+        assert isinstance(result["dpi"], int)
+
+    def test_string_width_coerced_to_float(self) -> None:
+        raw = {"city": "Paris", "country": "France", "width": "14.5"}
+        result = cli._normalize_config_data(raw)
+        assert result["width"] == pytest.approx(14.5)
+        assert isinstance(result["width"], float)
+
+    def test_string_height_coerced_to_float(self) -> None:
+        raw = {"city": "Paris", "country": "France", "height": "11.0"}
+        result = cli._normalize_config_data(raw)
+        assert result["height"] == pytest.approx(11.0)
+        assert isinstance(result["height"], float)
+
+    def test_int_city_coerced_to_string(self) -> None:
+        raw = {"city": 123, "country": "France"}
+        result = cli._normalize_config_data(raw)
+        assert result["city"] == "123"
+        assert isinstance(result["city"], str)
+
+    def test_int_country_coerced_to_string(self) -> None:
+        raw = {"city": "Paris", "country": 456}
+        result = cli._normalize_config_data(raw)
+        assert result["country"] == "456"
+        assert isinstance(result["country"], str)
+
+    def test_numeric_types_already_correct_passthrough(self) -> None:
+        raw = {"city": "Paris", "country": "France", "distance": 5000, "width": 12.0}
+        result = cli._normalize_config_data(raw)
+        assert result["distance"] == 5000
+        assert result["width"] == 12.0
+
+
+class TestParallelThemesCLI:
+    """Tests for --parallel-themes CLI flag."""
+
+    def test_parallel_themes_override(self) -> None:
+        parser = cli._build_parser()
+        cli._add_arguments(parser)
+        args = parser.parse_args(["--city", "X", "--country", "Y", "--parallel-themes"])
+        overrides = cli._collect_cli_overrides(parser, args)
+        assert overrides["parallel_themes"] is True
+
+    def test_parallel_themes_default_not_in_overrides(self) -> None:
+        parser = cli._build_parser()
+        cli._add_arguments(parser)
+        args = parser.parse_args(["--city", "X", "--country", "Y"])
+        overrides = cli._collect_cli_overrides(parser, args)
+        assert "parallel_themes" not in overrides
+
+
+class TestParallelBatchCLI:
+    """Tests for --parallel and --max-workers batch CLI flags."""
+
+    @patch("maptoposter.batch.run_batch", return_value={"total": 2, "successes": ["a"], "failures": []})
+    def test_batch_parallel_flags_passed(self, mock_batch: MagicMock, tmp_path: Path) -> None:
+        csv_file = tmp_path / "cities.csv"
+        csv_file.write_text("city,country\nParis,France\n")
+        result = cli.main(["--batch", str(csv_file), "--parallel", "--max-workers", "8"])
+        assert result == 0
+        mock_batch.assert_called_once()
+        assert mock_batch.call_args.kwargs["parallel"] is True
+        assert mock_batch.call_args.kwargs["max_workers"] == 8

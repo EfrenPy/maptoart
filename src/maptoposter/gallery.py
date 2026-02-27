@@ -4,6 +4,7 @@ import html
 import json
 import logging
 from pathlib import Path
+from urllib.parse import quote
 
 __all__ = ["generate_gallery"]
 
@@ -17,6 +18,7 @@ _HTML_TEMPLATE = """\
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'">
 <title>Map Poster Gallery</title>
 <style>
   body {{
@@ -121,9 +123,9 @@ def generate_gallery(poster_dir: str, output_path: str | None = None) -> str:
             title = f"{city}, {country}" if country else city
             subtitle = f"Theme: {theme}" if theme else html.escape(img.name)
 
-            # Escape filename for safe embedding in src/alt attributes;
-            # filenames may contain user-supplied city names with special chars.
-            rel = html.escape(img.name)
+            # URL-encode filename for src attributes (handles #, ?, %);
+            # html.escape is used separately for text content.
+            rel = quote(img.name, safe="")
 
             if img.suffix.lower() == ".pdf":
                 # PDFs can't be shown as <img>, use a placeholder
@@ -131,7 +133,7 @@ def generate_gallery(poster_dir: str, output_path: str | None = None) -> str:
                     f'<div class="card">'
                     f'<div style="padding:2rem;text-align:center;background:#0f3460;">'
                     f'<p style="font-size:3rem;">📄</p>'
-                    f'<p>{img.name}</p>'
+                    f'<p>{rel}</p>'
                     f'</div>'
                     f'<div class="info"><h3>{title}</h3><p>{subtitle}</p></div>'
                     f'</div>'

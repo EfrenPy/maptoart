@@ -26,15 +26,15 @@ Generate beautiful, minimalist map posters for any city in the world.
 
 ### With uv (Recommended)
 
-Make sure [uv](https://docs.astral.sh/uv/) is installed. Running the script by prepending `uv run` automatically creates and manages a virtual environment.
+Make sure [uv](https://docs.astral.sh/uv/) is installed. Running `uv run` automatically creates and manages a virtual environment.
 
 ```bash
 # First run will automatically install dependencies
-uv run ./create_map_poster.py --city "Paris" --country "France"
+uv run maptoposter-cli --city "Paris" --country "France"
 
 # Or sync dependencies explicitly first (using locked versions)
 uv sync --locked
-uv run ./create_map_poster.py --city "Paris" --country "France"
+uv run maptoposter-cli --city "Paris" --country "France"
 ```
 
 ### With pip + venv
@@ -97,12 +97,13 @@ options = PosterGenerationOptions(city="Paris", country="France", theme="terraco
 generate_posters(options)
 ```
 
-A convenience wrapper accepts keyword arguments directly:
+A convenience wrapper builds a poster in one call:
 
 ```python
-from maptoposter import create_poster_from_options
+from maptoposter import PosterGenerationOptions, create_poster_from_options
 
-create_poster_from_options(city="Paris", country="France", theme="terracotta", dpi=150)
+options = PosterGenerationOptions(city="Paris", country="France", dpi=150)
+create_poster_from_options(options, "terracotta")
 ```
 
 **Progress streaming** — pass an `on_progress` callback to receive status events:
@@ -119,6 +120,18 @@ options = PosterGenerationOptions(city="Paris", country="France")
 generate_posters(options, status_reporter=reporter)
 ```
 
+**Parallel multi-theme rendering** from Python:
+
+```python
+from maptoposter import PosterGenerationOptions, generate_posters
+
+options = PosterGenerationOptions(
+    city="Tokyo", country="Japan",
+    all_themes=True, parallel_themes=True, max_theme_workers=8,
+)
+generate_posters(options)
+```
+
 **Batch processing** from Python:
 
 ```python
@@ -126,6 +139,9 @@ from maptoposter import run_batch
 
 result = run_batch("cities.csv", global_overrides={"output_dir": "posters/"})
 print(f"{len(result['successes'])} posters generated, {len(result['failures'])} failures")
+
+# Parallel batch processing
+result = run_batch("cities.csv", parallel=True, max_workers=8)
 ```
 
 > See `examples/basic_python_usage.py` for a ready-to-run snippet that writes posters into `examples/output/` and logs JSON progress.
@@ -208,7 +224,10 @@ For immutable builds, run `uv build` or `pip install .` to produce/install a whe
 | **OPTIONAL:** `--dpi` | | Output DPI (auto-reduced if memory would exceed 2 GB) | 300 |
 | **OPTIONAL:** `--no-attribution` | | Hide the OpenStreetMap attribution text | |
 | **OPTIONAL:** `--format` | `-f` | Output format: png, svg, pdf | png |
+| **OPTIONAL:** `--parallel-themes` | | Render multiple themes in parallel (multiprocessing) | off |
 | **OPTIONAL:** `--batch` | | CSV or JSON file for batch poster generation | |
+| **OPTIONAL:** `--parallel` | | Process batch cities in parallel (multiprocessing) | off |
+| **OPTIONAL:** `--max-workers` | | Max parallel workers for batch processing | 4 |
 | **OPTIONAL:** `--gallery` | | Generate an HTML gallery after rendering | |
 | **OPTIONAL:** `--cache-clear` | | Delete all cached OSM data and exit | |
 | **OPTIONAL:** `--cache-info` | | Print cache statistics and exit | |
@@ -399,7 +418,24 @@ After generating posters, produce a self-contained HTML gallery page:
 maptoposter-cli --batch cities.csv --gallery
 ```
 
-The gallery is written to the output directory as `gallery.html` and displays all PNG/SVG/PDF posters with their metadata (city, theme, dimensions) in a responsive CSS grid.
+The gallery is written to the output directory as `index.html` and displays all PNG/SVG/PDF posters with their metadata (city, theme, dimensions) in a responsive CSS grid.
+
+### Parallel Rendering
+
+Speed up multi-theme and batch workflows with multiprocessing. Data fetching and graph projection are hoisted out of the theme loop automatically (no flag needed), so generating multiple themes for the same city only downloads OSM data once.
+
+```bash
+# Render all 17 themes in parallel for one city
+maptoposter-cli -c "Tokyo" -C "Japan" --all-themes --parallel-themes
+
+# Process batch cities in parallel (default: 4 workers)
+maptoposter-cli --batch cities.csv --parallel
+
+# Batch with 8 workers + parallel themes + gallery
+maptoposter-cli --batch cities.csv --parallel --max-workers 8 --parallel-themes --gallery
+```
+
+> **Note:** Parallel rendering uses `ProcessPoolExecutor` (multiprocessing, not threads) because matplotlib is not thread-safe. Each worker runs in its own process. Default behavior is sequential for backward compatibility; parallelism is opt-in via `--parallel-themes` and `--parallel`.
 
 ### Cache Management
 
@@ -511,7 +547,7 @@ A `Dockerfile` is provided for containerized usage:
 
 ```bash
 docker build -t maptoposter .
-docker run --rm -v "$PWD/posters:/app/posters" maptoposter --city "Paris" --country "France"
+docker run --rm -v "$PWD/posters:/home/maptoposter/posters" maptoposter --city "Paris" --country "France"
 ```
 
 Pre-built images are pushed to `ghcr.io/efrenpy/maptoposter` on each GitHub release.
@@ -641,3 +677,6 @@ G = ox.graph_from_point(point, dist=dist, network_type='walk')   # pedestrian
 - Cache coordinates locally to avoid Nominatim rate limits
 - Use `network_type='drive'` instead of `'all'` for faster renders
 - Use `--dpi 150` for quick previews, `--dpi 600` or higher for print quality
+- Use `--parallel-themes` when generating multiple themes for the same city (renders in parallel via multiprocessing)
+- Use `--parallel` for batch processing to render cities concurrently
+- Data fetching and graph projection are automatically hoisted when generating multiple themes, avoiding redundant downloads

@@ -111,15 +111,15 @@ class TestDownloadGoogleFontDownloadPath:
         css = """
 @font-face {
   font-weight: 300;
-  src: url(https://fonts.example.com/test_300.woff2);
+  src: url(https://fonts.gstatic.com/test_300.woff2);
 }
 @font-face {
   font-weight: 400;
-  src: url(https://fonts.example.com/test_400.woff2);
+  src: url(https://fonts.gstatic.com/test_400.woff2);
 }
 @font-face {
   font-weight: 700;
-  src: url(https://fonts.example.com/test_700.woff2);
+  src: url(https://fonts.gstatic.com/test_700.woff2);
 }
 """
         css_response = MagicMock()
@@ -155,7 +155,7 @@ class TestDownloadGoogleFontDownloadPath:
         css = """
 @font-face {
   font-weight: 400;
-  src: url(https://fonts.example.com/test_400.woff2);
+  src: url(https://fonts.gstatic.com/test_400.woff2);
 }
 """
         css_response = MagicMock()
@@ -187,7 +187,7 @@ class TestDownloadGoogleFontDownloadPath:
         css = """
 @font-face {
   font-weight: 400;
-  src: url(https://fonts.example.com/test_400.woff2);
+  src: url(https://fonts.gstatic.com/test_400.woff2);
 }
 """
         css_response = MagicMock()
@@ -250,7 +250,7 @@ class TestDownloadGoogleFont:
         css = """
 @font-face {
   font-weight: 400;
-  src: url(https://fonts.example.com/test_400.woff2);
+  src: url(https://fonts.gstatic.com/test_400.woff2);
 }
 """
         css_response = MagicMock()
@@ -291,7 +291,7 @@ class TestDownloadGoogleFont:
         css = """
 @font-face {
   font-weight: 400;
-  src: url(https://fonts.example.com/test_400.woff2);
+  src: url(https://fonts.gstatic.com/test_400.woff2);
 }
 """
         css_response = MagicMock()
@@ -328,15 +328,15 @@ class TestDownloadGoogleFont:
         css = """
 @font-face {
   font-weight: 300;
-  src: url(https://fonts.example.com/test_300.woff2);
+  src: url(https://fonts.gstatic.com/test_300.woff2);
 }
 @font-face {
   font-weight: 400;
-  src: url(https://fonts.example.com/test_400.woff2);
+  src: url(https://fonts.gstatic.com/test_400.woff2);
 }
 @font-face {
   font-weight: 700;
-  src: url(https://fonts.example.com/test_700.woff2);
+  src: url(https://fonts.gstatic.com/test_700.woff2);
 }
 """
         mock_response = MagicMock()
@@ -346,8 +346,53 @@ class TestDownloadGoogleFont:
 
         result = font_management.download_google_font("TestFont")
         assert result is not None
-        # Should only call requests.get once (for CSS), not for individual fonts
+        # All font files are cached, so no HTTP requests should be made at all
+        # (the CSS fetch is also skipped when all weights are found locally)
+        assert mock_get.call_count == 0
+
+    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoposter.font_management._download_font_file")
+    def test_partial_cache_fetches_css_and_downloads_missing(
+        self,
+        mock_download: MagicMock,
+        mock_get: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        monkeypatch.setattr(font_management, "FONTS_CACHE_DIR", cache_dir)
+
+        # Only cache 'regular' — light and bold are missing
+        (cache_dir / "testfont_regular.woff2").write_bytes(b"cached")
+
+        css = """
+@font-face {
+  font-weight: 300;
+  src: url(https://fonts.gstatic.com/test_300.woff2);
+}
+@font-face {
+  font-weight: 400;
+  src: url(https://fonts.gstatic.com/test_400.woff2);
+}
+@font-face {
+  font-weight: 700;
+  src: url(https://fonts.gstatic.com/test_700.woff2);
+}
+"""
+        mock_response = MagicMock()
+        mock_response.text = css
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        mock_download.return_value = b"fontdata"
+
+        result = font_management.download_google_font("TestFont")
+        assert result is not None
+        # CSS fetch should happen since not all fonts are cached
         assert mock_get.call_count == 1
+        # Only light (300) and bold (700) should be downloaded; regular is cached
+        assert mock_download.call_count == 2
 
 
 class TestGetActiveFonts:
@@ -439,7 +484,7 @@ class TestFontFileWriteOSError:
         css = """
 @font-face {
   font-weight: 400;
-  src: url(https://fonts.example.com/test_400.woff2);
+  src: url(https://fonts.gstatic.com/test_400.woff2);
 }
 """
         css_response = MagicMock()
@@ -470,11 +515,11 @@ class TestCSSBlockWithoutFontWeight:
         # CSS with one block missing font-weight and one valid block
         css = """
 @font-face {
-  src: url(https://fonts.example.com/test_no_weight.woff2);
+  src: url(https://fonts.gstatic.com/test_no_weight.woff2);
 }
 @font-face {
   font-weight: 400;
-  src: url(https://fonts.example.com/test_400.woff2);
+  src: url(https://fonts.gstatic.com/test_400.woff2);
 }
 """
         css_response = MagicMock()
@@ -490,6 +535,37 @@ class TestCSSBlockWithoutFontWeight:
         result = font_management.download_google_font("TestFont")
         assert result is not None
         assert "regular" in result
+
+
+class TestUntrustedFontDomainRejected:
+    """Test that font URLs from untrusted domains are skipped (#R35)."""
+
+    @patch("maptoposter.font_management.requests.get")
+    def test_untrusted_domain_skipped(
+        self,
+        mock_get: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        monkeypatch.setattr(font_management, "FONTS_CACHE_DIR", cache_dir)
+
+        css = """
+@font-face {
+  font-weight: 400;
+  src: url(https://evil.example.com/malicious.woff2);
+}
+"""
+        css_response = MagicMock()
+        css_response.text = css
+        css_response.raise_for_status = MagicMock()
+
+        mock_get.return_value = css_response
+
+        result = font_management.download_google_font("TestFont")
+        # No fonts downloaded since domain is untrusted
+        assert result is None
 
 
 class TestLoadFontsGoogleFontFallback:
@@ -559,6 +635,22 @@ class TestFontRequestException:
         with caplog.at_level(logging.WARNING, logger="maptoposter.font_management"):
             result = font_management.download_google_font("FakeFont")
         assert result is None
+        # CSS fetch now retries on 500, then _RetryableHTTPError is caught
+        # by the network-error handler
+        assert any("Network error downloading" in r.message or "Retryable HTTP" in r.message for r in caplog.records)
+
+    @patch("maptoposter.font_management.requests.get")
+    def test_non_retryable_http_error_returns_none(
+        self, mock_get: MagicMock, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A 403 (not in _RETRYABLE_HTTP_CODES) goes straight to HTTPError handler."""
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.raise_for_status.side_effect = requests.HTTPError(response=mock_response)
+        mock_get.return_value = mock_response
+        with caplog.at_level(logging.WARNING, logger="maptoposter.font_management"):
+            result = font_management.download_google_font("FakeFont")
+        assert result is None
         assert any("HTTP error downloading" in r.message for r in caplog.records)
 
 
@@ -581,7 +673,7 @@ class TestRegularWeightFallback:
         css = """
 @font-face {
   font-weight: 700;
-  src: url(https://fonts.example.com/test_700.woff2);
+  src: url(https://fonts.gstatic.com/test_700.woff2);
 }
 """
         css_response = MagicMock()
@@ -625,3 +717,17 @@ class TestLoadFontsGoogleFontSuccessLog:
             result = font_management.load_fonts("CustomFont")
         assert result is not None
         assert any("loaded successfully" in r.message for r in caplog.records)
+
+
+class TestFontFileSizeLimit:
+    """Font download rejects oversized files."""
+
+    @patch("maptoposter.font_management.requests.get")
+    def test_oversized_font_raises(self, mock_get: MagicMock) -> None:
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = b"x" * (11 * 1024 * 1024)  # 11 MB exceeds 10 MB limit
+        resp.raise_for_status = MagicMock()
+        mock_get.return_value = resp
+        with pytest.raises(ValueError, match="exceeds size limit"):
+            font_management._download_font_file("https://fonts.gstatic.com/test.woff2")

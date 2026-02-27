@@ -2,15 +2,22 @@
 This file captures the operational knowledge agentic contributors need: how to set up the project, which commands CI expects, how to run targeted checks, and the coding style guardrails that keep the CLI reliable. Keep it in sync with the repo.
 
 ## Repository Snapshot
-- Primary entrypoint: `src/maptoposter/core.py` (rendering + data pipeline).
-- CLI entry: `src/maptoposter/cli.py` exposes the `maptoposter-cli` console script (supports `--config` files, structured logging, metadata output); `create_map_poster.py` remains as a thin legacy wrapper.
-- Supporting module: `src/maptoposter/font_management.py` (Google Fonts download + caching logic).
-- Assets: `themes/*.json`, `fonts/` (Roboto defaults + cached web fonts), `posters/` (generated output), `cache/` (OSM + geocode cache, ignored).
+- Primary entrypoint: `src/maptoposter/core.py` (data fetching, poster generation, theme resolution).
+- CLI entry: `src/maptoposter/cli.py` exposes the `maptoposter-cli` console script (supports `--config` files, structured logging, metadata output, parallel rendering).
+- Modules (split from core in v0.4.0):
+  - `rendering.py` — figure setup, render layers, typography, gradient fade
+  - `geocoding.py` — Nominatim geocoding with tenacity retries, coordinate validation
+  - `_util.py` — StatusReporter, cache HMAC integrity, CacheError, RestrictedUnpickler
+  - `batch.py` — CSV/JSON batch processing, parallel city processing, pre-geocoding
+  - `gallery.py` — HTML gallery generator with CSS grid and metadata cards
+  - `font_management.py` — Google Fonts download + caching logic
+- Assets: `src/maptoposter/themes/*.json`, `src/maptoposter/fonts/` (Roboto defaults + cached web fonts), `posters/` (generated output), `cache/` (OSM + geocode cache, ignored).
 - Tooling manifests: `pyproject.toml`, `requirements.txt`, `.flake8`, `.github/workflows/*.yml`, `test/all_variations.sh`.
 - Python target: 3.11+ (CI runs 3.11-3.14). Most dependencies need native libs (GEOS/Proj via `pyproj`/`shapely`).
+- Test suite: 414 tests, 100% coverage enforced.
 
 ## Environment Setup
-- Preferred workflow is [uv](https://docs.astral.sh/uv/): `uv sync --locked` to install with `uv.lock`, or `uv run maptoposter-cli --city "Paris" --country "France"` to auto-create the venv on demand. (Fallback: `uv run python create_map_poster.py ...` still works.)
+- Preferred workflow is [uv](https://docs.astral.sh/uv/): `uv sync --locked` to install with `uv.lock`, or `uv run maptoposter-cli --city "Paris" --country "France"` to auto-create the venv on demand.
 - Traditional venv: `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`.
 - When debugging CI parity, mirror its steps: upgrade pip, `pip install -r requirements.txt` (no extras), then `pip install flake8 pylint mypy pip-audit`.
 - Fonts download into `fonts/cache/`. The directory is gitignored; do not commit downloaded `.woff2`/`.ttf` files.
@@ -26,8 +33,8 @@ This file captures the operational knowledge agentic contributors need: how to s
 - Whenever `pyproject.toml` dependencies change, run the sync script before pushing so `requirements.txt` stays in lockstep; include the refreshed file in commits.
 
 ## Linting & Static Analysis
-- `uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics` then `uv run flake8 . --count --statistics --max-line-length=160` — replicate CI job exactly. Local `.flake8` enforces 120-char target + ignores `E203`; keep code within 120 even though CI tolerates 160.
-- `uv run pylint . --max-line-length=160` — CI marks pylint warnings as non-blocking but still reports them; keep score high to avoid regressions.
+- `uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics` then `uv run flake8 . --count --statistics --max-line-length=120` — replicate CI job exactly. The `MAX_LINE_LENGTH` env var in `pr-checks.yml` is set to 120.
+- `uv run pylint . --max-line-length=120` — CI marks pylint warnings as non-blocking but still reports them; keep score high to avoid regressions.
 - `uv run mypy . --ignore-missing-imports --no-strict-optional` — ensures our gradual typing remains consistent despite heavy geospatial libs lacking stubs.
 - `uv run pip-audit -r requirements.txt` — mirrors `dependency-check` job; run before bumping dependencies.
 - Keep `tqdm`, `osmnx`, and `geopandas` imports grouped under third-party block; avoid unused imports or wildcard pulls to stay lint-clean.
@@ -36,8 +43,8 @@ This file captures the operational knowledge agentic contributors need: how to s
 - `uv run maptoposter-cli --list-themes` — ensures JSON themes parse cleanly and required files exist.
 - `bash test/all_variations.sh` — exhaustive integration exercise that generates Bengaluru posters in every theme/size. It is network and disk heavy; prefer targeted runs while iterating.
 - **Single scenario regression:** `uv run maptoposter-cli -c "Paris" -C "France" -t terracotta -d 12000 --dpi 150`. Swap arguments to stress specific code paths (custom fonts, non-Latin labels, etc.).
-- Unit tests live under `tests/`. Install dev extras once via `uv pip install '.[dev]'`, then run `uv run pytest` (fixtures mock geocoding/OSM data, so tests avoid network calls).
-- When automated pytest suites arrive, the convention should be `uv run pytest tests/path::TestClass::test_case` for single tests; document the exact path once tests exist.
+- Unit tests live under `tests/`. Install dev extras once via `uv pip install '.[dev]'`, then run `uv run pytest` (fixtures mock geocoding/OSM data, so tests avoid network calls). CI enforces 100% coverage via `--cov-fail-under=100`.
+- Run a single test with `uv run pytest tests/test_core.py::TestClassName::test_method`.
 
 ## Data & Assets Expectations
 - Theme JSON contract: keys `bg`, `text`, `gradient_color`, `water`, `parks`, `road_*`, optionally new layer entries. Always provide hex strings and keep descriptions short; CLI uses them in logs.
@@ -51,6 +58,13 @@ This file captures the operational knowledge agentic contributors need: how to s
 - `font_management` isolates HTTP calls, caches, and verifies fonts exist before handing paths to Matplotlib.
 - Global constants (e.g., `PAPER_SIZES`, `CACHE_DIR`, `THEME`) live near top-level; treat them as configuration knobs for future refactors.
 
+### Parallelization Architecture
+- **Data hoisting:** `generate_posters()` calls `_fetch_map_data()` and `ox.project_graph()` once before the theme loop, passing results to `create_poster()` via `_prefetched_data` and `_projected_graph` params. This avoids redundant network calls when generating multiple themes for the same city.
+- **Parallel theme rendering:** When `parallel_themes=True`, `generate_posters()` uses `ProcessPoolExecutor` to render themes concurrently. matplotlib is NOT thread-safe, so multiprocessing (not threading) is required. The worker function `_render_theme_worker()` must be top-level (not a closure or method) for pickle serialization.
+- **Pre-geocoding:** `_pre_geocode_batch()` resolves coordinates for all batch entries before the main loop. Nominatim enforces 1 req/sec, so geocoding remains sequential, but the results make city processing independent.
+- **Parallel batch:** When `parallel=True`, `run_batch()` uses `ProcessPoolExecutor` to process cities concurrently via `_process_city_worker()`. Each worker calls `generate_posters()` independently.
+- **Key constraint:** All worker functions must be pickle-serializable (top-level, no lambdas, no closures over unpicklable objects). This affects testing—mocking `ProcessPoolExecutor` itself is required since `MagicMock` objects can't be pickled.
+
 ## Import & Module Guidelines
 - Order imports: stdlib → third-party → local. Use blank lines to separate groups, mirroring `maptoposter/core.py`.
 - Avoid `from module import *`. Prefer explicit names and, where relevant, alias heavy modules (`matplotlib.pyplot as plt`).
@@ -58,7 +72,7 @@ This file captures the operational knowledge agentic contributors need: how to s
 - Keep CLI-only dependencies (e.g., `argparse`, `sys`) at module scope; dynamic imports complicate linting/type checking.
 
 ## Formatting Expectations
-- 4 spaces, no tabs. Stick to 120 characters even though CI temporarily allows 160.
+- 4 spaces, no tabs. Stick to 120 characters (CI enforces this via `MAX_LINE_LENGTH=120`).
 - Use descriptive triple-double-quoted docstrings for modules, classes, and non-trivial functions. Include purpose, important args, and side effects when relevant.
 - Prefer f-strings for string formatting. Avoid `%`-style formatting except when required by logging APIs.
 - Multi-line literals (lists/dicts) should align keys/values similarly to existing theme dicts. Trailing commas acceptable for readability.
@@ -94,6 +108,8 @@ This file captures the operational knowledge agentic contributors need: how to s
 - Use `tqdm` or lightweight logging for long loops (e.g., generating posters for all themes). Avoid nested progress bars; they render poorly in CI logs.
 - `create_gradient_fade` currently builds `np.linspace` arrays per call. Reuse or cache results if you add more gradients to avoid redundant allocations.
 - Limit DPI above 2400. Existing guard rails warn users; keep them if you tweak defaults.
+- `--parallel-themes` and `--parallel` use `ProcessPoolExecutor`; each worker spawns a full Python process with its own memory. Monitor total RAM when combining large `dist`, high DPI, and many workers.
+- Data fetching is hoisted in `generate_posters()`—adding new per-theme data should go through the prefetch mechanism to avoid re-downloading.
 
 ## Git & Workflow Notes
 - Do not commit generated posters, fonts, caches, or virtualenvs. `.gitignore` already covers them; expand if new tooling adds artifacts.
@@ -128,7 +144,7 @@ This file captures the operational knowledge agentic contributors need: how to s
 - Respect `MAPTOPOSTER_CACHE_DIR` overrides to support ephemeral filesystems; use `Path`/`os.makedirs(..., exist_ok=True)` like `_cache_path` does.
 - Cached pickles must remain backward-compatible; update keys or version them explicitly before changing structure.
 - Network calls (Nominatim, Google Fonts) should set timeouts and catch `requests`/`geopy` errors; bubble up actionable messages.
-- Never parallelize geocode or map downloads without revisiting rate-limit guards (`time.sleep(1)`).
+- Geocoding is pre-resolved in batch via `_pre_geocode_batch()` (still sequential, respects rate limits). Never parallelize geocode requests without revisiting Nominatim rate-limit guards.
 
 ## Manual QA Checklist
 - Verify generated poster filenames follow `{city}_{theme}_{YYYYMMDD_HHMMSS}.ext` and land in `posters/`.
@@ -150,7 +166,6 @@ This file captures the operational knowledge agentic contributors need: how to s
 - Capture stack traces via `traceback.print_exc()` in `except Exception` blocks so diagnostics survive headless CI runs.
 
 ## Future Automation Notes
-- When a pytest suite lands, wire it into `pr-checks.yml` next to the CLI smoke steps; keep runtimes under 5 minutes across OSes.
 - Consider adding `ruff` or `black` only after aligning max-line-length with `.flake8`; update this guide simultaneously.
 - Any new CLI subcommands should expose `--dry-run` or similar toggles so CI can exercise them without hitting APIs.
 - Keep telemetry optional; default to off unless governed by explicit flag or env var.

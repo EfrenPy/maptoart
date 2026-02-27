@@ -131,3 +131,12 @@ class TestIntegration:
         )
 
         assert "poster.save.dpi_cap" in events
+
+
+class TestPackageTyping:
+    """Verify py.typed marker is included in installed package."""
+
+    def test_py_typed_marker_exists(self) -> None:
+        import maptoposter
+        marker = Path(maptoposter.__file__).parent / "py.typed"
+        assert marker.exists(), "py.typed marker missing from installed package"
