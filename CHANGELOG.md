@@ -183,39 +183,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.3.0] - 2026-01-27 (Maintainer: @originalankur)
+## [0.3.0] - 2026-01-27 (Maintainer: @EfrenPy)
 
 ### Added
-- **Custom coordinates support** - `--latitude` and `--longitude` arguments ([#106](https://github.com/originalankur/maptoart/pull/106))
-- **Emerald theme** - Lush dark green aesthetic with mint accents ([#114](https://github.com/originalankur/maptoart/pull/114))
-- **GitHub Actions** - PR checks workflow ([#98](https://github.com/originalankur/maptoart/pull/98))
+- **Custom coordinates support** - `--latitude` and `--longitude` arguments ([#106](https://github.com/EfrenPy/maptoart/pull/106))
+- **Emerald theme** - Lush dark green aesthetic with mint accents ([#114](https://github.com/EfrenPy/maptoart/pull/114))
+- **GitHub Actions** - PR checks workflow ([#98](https://github.com/EfrenPy/maptoart/pull/98))
 - **Conflict labeling** - Auto-label PRs with merge conflicts
 
 ### Changed
-- **Default theme** changed from `feature_based` to `terracotta` ([#131](https://github.com/originalankur/maptoart/pull/131))
-- **Default distance** changed from 12000m to 18000m ([#128](https://github.com/originalankur/maptoart/pull/128))
-- **Max dimensions** enforced at 20 inches for width/height (supports up to 4K resolution) ([#128](https://github.com/originalankur/maptoart/pull/128), [#129](https://github.com/originalankur/maptoart/pull/129))
+- **Default theme** changed from `feature_based` to `terracotta` ([#131](https://github.com/EfrenPy/maptoart/pull/131))
+- **Default distance** changed from 12000m to 18000m ([#128](https://github.com/EfrenPy/maptoart/pull/128))
+- **Max dimensions** enforced at 20 inches for width/height (supports up to 4K resolution) ([#128](https://github.com/EfrenPy/maptoart/pull/128), [#129](https://github.com/EfrenPy/maptoart/pull/129))
 
 ### Removed
-- `feature_based` theme ([#131](https://github.com/originalankur/maptoart/pull/131))
+- `feature_based` theme ([#131](https://github.com/EfrenPy/maptoart/pull/131))
 
 ### Fixed
-- Cache directory handling ([#109](https://github.com/originalankur/maptoart/pull/109))
+- Cache directory handling ([#109](https://github.com/EfrenPy/maptoart/pull/109))
 - Dynamic font scaling based on poster width
 
 ---
 
-## [0.2.1] - 2026-01-18 (Maintainer: @originalankur)
+## [0.2.1] - 2026-01-18 (Maintainer: @EfrenPy)
 
 ### Added
-- **SVG/PDF export** - `--format` flag for vector output ([#57](https://github.com/originalankur/maptoart/pull/57))
-- **Variable poster dimensions** - `-W` and `-H` arguments ([#59](https://github.com/originalankur/maptoart/pull/59))
+- **SVG/PDF export** - `--format` flag for vector output ([#57](https://github.com/EfrenPy/maptoart/pull/57))
+- **Variable poster dimensions** - `-W` and `-H` arguments ([#59](https://github.com/EfrenPy/maptoart/pull/59))
 - **Caching** - Downloaded OSM data is now cached locally
 - **Rate limiting** - 0.3s delay between API requests
 
 ### Fixed
-- Map warping issues with variable dimensions ([#59](https://github.com/originalankur/maptoart/pull/59))
-- Edge nodes retention for complete road networks ([#27](https://github.com/originalankur/maptoart/pull/27))
+- Map warping issues with variable dimensions ([#59](https://github.com/EfrenPy/maptoart/pull/59))
+- Edge nodes retention for complete road networks ([#27](https://github.com/EfrenPy/maptoart/pull/27))
 - Point geometry filtering to prevent dots on maps
 - Dynamic font size adjustment for long city names
 - Nominatim timeout increased to 10 seconds
