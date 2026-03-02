@@ -1,6 +1,6 @@
 [project]
-name = "maptoposter"
-version = "0.5.0"
+name = "maptoart"
+version = "0.5.1"
 description = "Generate beautiful, minimalist map posters for any city — batch processing, parallel rendering, 17 themes, SVG/PDF export."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,14 +36,15 @@ dependencies = [
 ]
 
 [project.scripts]
-maptoposter-cli = "maptoposter.cli:_entry"
+maptoart-cli = "maptoart.cli:_entry"
+maptoposter-cli = "maptoart.cli:_entry"
 
 [project.urls]
-Homepage = "https://github.com/EfrenPy/maptoposter"
-Documentation = "https://github.com/EfrenPy/maptoposter#readme"
-Source = "https://github.com/EfrenPy/maptoposter"
-"Bug Tracker" = "https://github.com/EfrenPy/maptoposter/issues"
-Changelog = "https://github.com/EfrenPy/maptoposter/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/EfrenPy/maptoart"
+Documentation = "https://github.com/EfrenPy/maptoart#readme"
+Source = "https://github.com/EfrenPy/maptoart"
+"Bug Tracker" = "https://github.com/EfrenPy/maptoart/issues"
+Changelog = "https://github.com/EfrenPy/maptoart/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
@@ -66,10 +67,10 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-maptoposter = ["themes/*.json", "fonts/*.ttf", "py.typed"]
+maptoart = ["themes/*.json", "fonts/*.ttf", "py.typed"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=maptoposter --cov-report=term-missing --cov-fail-under=100"
+addopts = "--cov=maptoart --cov-report=term-missing --cov-fail-under=100"
 testpaths = ["tests"]
 markers = ["integration: end-to-end tests with real rendering"]
 

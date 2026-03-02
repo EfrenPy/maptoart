@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-03-02
+
+### Changed
+- Rebranded project/package/CLI from `maptoposter` to `maptoart` across source, docs, workflows, and Docker assets.
+- Updated repository, PyPI, and GHCR references to the new `EfrenPy/maptoart` name.
+
+### Compatibility
+- Kept a legacy CLI entry point alias: `maptoposter-cli` now routes to `maptoart.cli:_entry`.
+- Added legacy environment variable fallbacks (`MAPTOPOSTER_*`) while standardizing on `MAPTOART_*`.
+
 ## [0.5.0] - 2026-02-27
 
 ### Added
@@ -119,7 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Thread-safe theme cache** — `_theme_cache_lock` protects concurrent `load_theme()` access
 - **Lazy-load fonts and cache directory** — no I/O at import time
 - **Status event naming convention** — documented dot-separated hierarchy (`module.action.detail`)
-- **Environment variable documentation** — module-level docstrings list all `MAPTOPOSTER_*` env vars
+- **Environment variable documentation** — module-level docstrings list all `MAPTOART_*` env vars
 - **`ClassVar` type annotation** on `_RestrictedUnpickler._ALLOWED_MODULES`
 - **Consolidated exception handlers** — `ConnectionError`/`Timeout` merged in `font_management.py`
 - **Narrowed `except Exception`** — replaced with specific types (`RuntimeError`, `ValueError`, `OSError`) throughout
@@ -149,7 +159,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Author** updated to Efren Rodriguez Rodriguez
-- **GitHub URLs** updated to `EfrenPy/maptoposter`
+- **GitHub URLs** updated to `EfrenPy/maptoart`
 - **`plt.close(fig)`** replaces `plt.close("all")` to avoid closing unrelated figures
 - **Output path validation** — `generate_output_filename()` resolves to absolute path, preventing `../` traversal
 - **Actionable error messages** — geocoding errors include remediation hints
@@ -177,21 +187,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.0] - 2026-01-27 (Maintainer: @originalankur)
 
 ### Added
-- **Custom coordinates support** - `--latitude` and `--longitude` arguments ([#106](https://github.com/originalankur/maptoposter/pull/106))
-- **Emerald theme** - Lush dark green aesthetic with mint accents ([#114](https://github.com/originalankur/maptoposter/pull/114))
-- **GitHub Actions** - PR checks workflow ([#98](https://github.com/originalankur/maptoposter/pull/98))
+- **Custom coordinates support** - `--latitude` and `--longitude` arguments ([#106](https://github.com/originalankur/maptoart/pull/106))
+- **Emerald theme** - Lush dark green aesthetic with mint accents ([#114](https://github.com/originalankur/maptoart/pull/114))
+- **GitHub Actions** - PR checks workflow ([#98](https://github.com/originalankur/maptoart/pull/98))
 - **Conflict labeling** - Auto-label PRs with merge conflicts
 
 ### Changed
-- **Default theme** changed from `feature_based` to `terracotta` ([#131](https://github.com/originalankur/maptoposter/pull/131))
-- **Default distance** changed from 12000m to 18000m ([#128](https://github.com/originalankur/maptoposter/pull/128))
-- **Max dimensions** enforced at 20 inches for width/height (supports up to 4K resolution) ([#128](https://github.com/originalankur/maptoposter/pull/128), [#129](https://github.com/originalankur/maptoposter/pull/129))
+- **Default theme** changed from `feature_based` to `terracotta` ([#131](https://github.com/originalankur/maptoart/pull/131))
+- **Default distance** changed from 12000m to 18000m ([#128](https://github.com/originalankur/maptoart/pull/128))
+- **Max dimensions** enforced at 20 inches for width/height (supports up to 4K resolution) ([#128](https://github.com/originalankur/maptoart/pull/128), [#129](https://github.com/originalankur/maptoart/pull/129))
 
 ### Removed
-- `feature_based` theme ([#131](https://github.com/originalankur/maptoposter/pull/131))
+- `feature_based` theme ([#131](https://github.com/originalankur/maptoart/pull/131))
 
 ### Fixed
-- Cache directory handling ([#109](https://github.com/originalankur/maptoposter/pull/109))
+- Cache directory handling ([#109](https://github.com/originalankur/maptoart/pull/109))
 - Dynamic font scaling based on poster width
 
 ---
@@ -199,14 +209,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.1] - 2026-01-18 (Maintainer: @originalankur)
 
 ### Added
-- **SVG/PDF export** - `--format` flag for vector output ([#57](https://github.com/originalankur/maptoposter/pull/57))
-- **Variable poster dimensions** - `-W` and `-H` arguments ([#59](https://github.com/originalankur/maptoposter/pull/59))
+- **SVG/PDF export** - `--format` flag for vector output ([#57](https://github.com/originalankur/maptoart/pull/57))
+- **Variable poster dimensions** - `-W` and `-H` arguments ([#59](https://github.com/originalankur/maptoart/pull/59))
 - **Caching** - Downloaded OSM data is now cached locally
 - **Rate limiting** - 0.3s delay between API requests
 
 ### Fixed
-- Map warping issues with variable dimensions ([#59](https://github.com/originalankur/maptoposter/pull/59))
-- Edge nodes retention for complete road networks ([#27](https://github.com/originalankur/maptoposter/pull/27))
+- Map warping issues with variable dimensions ([#59](https://github.com/originalankur/maptoart/pull/59))
+- Edge nodes retention for complete road networks ([#27](https://github.com/originalankur/maptoart/pull/27))
 - Point geometry filtering to prevent dots on maps
 - Dynamic font size adjustment for long city names
 - Nominatim timeout increased to 10 seconds
@@ -228,7 +238,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-01-17 (Initial Release)
 
 ### Added
-- Initial maptoposter source code
+- Initial maptoart source code
 - README with usage instructions
 - 17 built-in themes:
   - autumn, blueprint, contrast_zones, copper_patina

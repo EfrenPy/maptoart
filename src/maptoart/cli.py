@@ -60,7 +60,7 @@ CONFIG_KEY_ALIASES = {
 
 def _build_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
-        prog="maptoposter-cli",
+        prog="maptoart-cli",
         description=(
             f"City Map Poster Generator v{__version__}\n"
             "\n"
@@ -81,67 +81,67 @@ def _build_parser() -> argparse.ArgumentParser:
             "  - Metadata sidecar: each poster gets a .json with coords, theme, DPI, timestamps\n"
             "  - Structured logging: --log-format json for machine-readable event streams\n"
             "  - Memory safety: auto DPI reduction if render would exceed 2 GB\n"
-            "  - Docker image: ghcr.io/efrenpy/maptoposter (multi-stage, slim build)\n"
+            "  - Docker image: ghcr.io/efrenpy/maptoart (multi-stage, slim build)\n"
             "\n"
-            "Install:  pip install maptoposter\n"
-            "Docker:   docker pull ghcr.io/efrenpy/maptoposter\n"
-            "Docs:     https://github.com/EfrenPy/maptoposter\n"
-            "PyPI:     https://pypi.org/project/maptoposter/"
+            "Install:  pip install maptoart\n"
+            "Docker:   docker pull ghcr.io/efrenpy/maptoart\n"
+            "Docs:     https://github.com/EfrenPy/maptoart\n"
+            "PyPI:     https://pypi.org/project/maptoart/"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Quick start:
-  maptoposter-cli -c "Paris" -C "France"
-  maptoposter-cli -c "Tokyo" -C "Japan" -t japanese_ink -d 15000
-  maptoposter-cli -c "New York" -C "USA" -t noir -p A2 --dpi 600
+  maptoart-cli -c "Paris" -C "France"
+  maptoart-cli -c "Tokyo" -C "Japan" -t japanese_ink -d 15000
+  maptoart-cli -c "New York" -C "USA" -t noir -p A2 --dpi 600
 
 Multiple themes:
-  maptoposter-cli -c Paris -C France --themes noir terracotta sunset
-  maptoposter-cli -c Tokyo -C Japan --all-themes
-  maptoposter-cli -c London -C UK --all-themes --parallel-themes
+  maptoart-cli -c Paris -C France --themes noir terracotta sunset
+  maptoart-cli -c Tokyo -C Japan --all-themes
+  maptoart-cli -c London -C UK --all-themes --parallel-themes
 
 Output formats (PNG, SVG, PDF):
-  maptoposter-cli -c Paris -C France -f svg               # vector, infinite zoom
-  maptoposter-cli -c Paris -C France -f pdf -p A3         # print-ready PDF
-  maptoposter-cli -c Paris -C France --output-dir prints/  # custom output directory
+  maptoart-cli -c Paris -C France -f svg               # vector, infinite zoom
+  maptoart-cli -c Paris -C France -f pdf -p A3         # print-ready PDF
+  maptoart-cli -c Paris -C France --output-dir prints/  # custom output directory
 
 Custom coordinates (decimal or DMS):
-  maptoposter-cli -c "New York" -C USA -lat 40.7128 -long -74.0060
-  maptoposter-cli -c "Paris" -C France -lat "48d51m24s" -long "2d21m8s"
+  maptoart-cli -c "New York" -C USA -lat 40.7128 -long -74.0060
+  maptoart-cli -c "Paris" -C France -lat "48d51m24s" -long "2d21m8s"
 
 Multilingual (non-Latin scripts):
-  maptoposter-cli -c Tokyo -C Japan -dc "東京" -dC "日本" --font-family "Noto Sans JP"
-  maptoposter-cli -c Dubai -C UAE -dc "دبي" -dC "الإمارات" --font-family "Cairo"
-  maptoposter-cli -c Seoul -C "South Korea" -dc "서울" -dC "대한민국" --font-family "Noto Sans KR"
+  maptoart-cli -c Tokyo -C Japan -dc "東京" -dC "日本" --font-family "Noto Sans JP"
+  maptoart-cli -c Dubai -C UAE -dc "دبي" -dC "الإمارات" --font-family "Cairo"
+  maptoart-cli -c Seoul -C "South Korea" -dc "서울" -dC "대한민국" --font-family "Noto Sans KR"
 
 Batch processing & gallery:
-  maptoposter-cli --batch cities.csv                       # CSV with city,country columns
-  maptoposter-cli --batch cities.json --gallery            # JSON input + HTML gallery
-  maptoposter-cli --batch cities.csv --dpi 150 --output-dir posters/
+  maptoart-cli --batch cities.csv                       # CSV with city,country columns
+  maptoart-cli --batch cities.json --gallery            # JSON input + HTML gallery
+  maptoart-cli --batch cities.csv --dpi 150 --output-dir posters/
 
 Parallel rendering (multiprocessing, since v0.5.0):
-  maptoposter-cli -c Tokyo -C Japan --all-themes --parallel-themes
-  maptoposter-cli --batch cities.csv --parallel --max-workers 8
-  maptoposter-cli --batch cities.csv --parallel --parallel-themes --gallery
+  maptoart-cli -c Tokyo -C Japan --all-themes --parallel-themes
+  maptoart-cli --batch cities.csv --parallel --max-workers 8
+  maptoart-cli --batch cities.csv --parallel --parallel-themes --gallery
 
 Config file (JSON or YAML — all CLI options as snake_case keys):
-  maptoposter-cli --config poster.yaml
-  maptoposter-cli --config poster.yaml --dpi 600    # CLI flags override config
+  maptoart-cli --config poster.yaml
+  maptoart-cli --config poster.yaml --dpi 600    # CLI flags override config
 
 Structured logging & metadata:
-  maptoposter-cli -c Paris -C France --log-format json     # machine-readable events
-  maptoposter-cli -c Paris -C France --debug               # verbose DEBUG output
+  maptoart-cli -c Paris -C France --log-format json     # machine-readable events
+  maptoart-cli -c Paris -C France --debug               # verbose DEBUG output
   # Every poster generates a .json sidecar with coords, theme, DPI, timestamps
 
 Utilities:
-  maptoposter-cli --list-themes                      # show all 17 themes
-  maptoposter-cli -c London -C UK --dry-run          # preview without generating
-  maptoposter-cli --cache-info                       # show cache statistics
-  maptoposter-cli --cache-clear                      # delete cached OSM data
+  maptoart-cli --list-themes                      # show all 17 themes
+  maptoart-cli -c London -C UK --dry-run          # preview without generating
+  maptoart-cli --cache-info                       # show cache statistics
+  maptoart-cli --cache-clear                      # delete cached OSM data
 
 Docker:
-  docker run --rm -v "$PWD/posters:/home/maptoposter/posters" \\
-    ghcr.io/efrenpy/maptoposter -c "Paris" -C "France"
+  docker run --rm -v "$PWD/posters:/home/maptoart/posters" \\
+    ghcr.io/efrenpy/maptoart -c "Paris" -C "France"
 
 Paper sizes: A0 (33.1x46.8"), A1 (23.4x33.1"), A2 (16.5x23.4"),
              A3 (11.7x16.5"), A4 (8.3x11.7"). Use -o landscape to flip.
@@ -156,12 +156,12 @@ Distance guide:
   Max: 100000m (100 km)
 
 Environment variables:
-  MAPTOPOSTER_OUTPUT_DIR       Output directory (default: posters/)
-  MAPTOPOSTER_CACHE_DIR        OSM data cache (default: cache/)
-  MAPTOPOSTER_THEMES_DIR       Custom themes directory
-  MAPTOPOSTER_FONTS_DIR        Bundled font files directory
-  MAPTOPOSTER_FONTS_CACHE      Google Fonts cache (~/.cache/maptoposter/fonts)
-  MAPTOPOSTER_NOMINATIM_DELAY  Geocoding rate-limit in seconds (default: 1)
+  MAPTOART_OUTPUT_DIR       Output directory (default: posters/)
+  MAPTOART_CACHE_DIR        OSM data cache (default: cache/)
+  MAPTOART_THEMES_DIR       Custom themes directory
+  MAPTOART_FONTS_DIR        Bundled font files directory
+  MAPTOART_FONTS_CACHE      Google Fonts cache (~/.cache/maptoart/fonts)
+  MAPTOART_NOMINATIM_DELAY  Geocoding rate-limit in seconds (default: 1)
 
 Themes (17 built-in):
   autumn, blueprint, contrast_zones, copper_patina, emerald, forest,
@@ -216,7 +216,7 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
                           " would exceed 2 GB. Capped at 300 for vector formats (PDF/SVG)")
     out.add_argument("--output-dir", type=str,
                      help="Destination directory for posters and metadata sidecar files"
-                          " (default: posters/ or $MAPTOPOSTER_OUTPUT_DIR)")
+                          " (default: posters/ or $MAPTOART_OUTPUT_DIR)")
     out.add_argument("--no-attribution", dest="no_attribution", action="store_true",
                      help="Hide the OpenStreetMap attribution text on the poster")
 

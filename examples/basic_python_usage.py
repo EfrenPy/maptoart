@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from maptoposter import PosterGenerationOptions, generate_posters, StatusReporter
+from maptoart import PosterGenerationOptions, generate_posters, StatusReporter
 
 
 def main() -> None:

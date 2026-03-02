@@ -2,10 +2,10 @@
 
 import warnings
 
-from maptoposter.cli import main
+from maptoart.cli import main
 
 warnings.warn(
-    "create_map_poster.py is deprecated. Use 'maptoposter-cli' instead.",
+    "create_map_poster.py is deprecated. Use 'maptoart-cli' instead.",
     DeprecationWarning,
     stacklevel=1,
 )

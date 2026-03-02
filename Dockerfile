@@ -19,13 +19,13 @@ RUN apt-get update \
 
 COPY --from=builder /install /usr/local
 
-RUN python -c "from maptoposter.font_management import load_fonts; f = load_fonts(); assert f, 'Bundled fonts missing'"
+RUN python -c "from maptoart.font_management import load_fonts; f = load_fonts(); assert f, 'Bundled fonts missing'"
 
-RUN useradd --create-home maptoposter
-USER maptoposter
-WORKDIR /home/maptoposter
+RUN useradd --create-home maptoart
+USER maptoart
+WORKDIR /home/maptoart
 
 HEALTHCHECK --interval=60s --timeout=5s --retries=2 \
-    CMD maptoposter-cli --help > /dev/null 2>&1 || exit 1
+    CMD maptoart-cli --help > /dev/null 2>&1 || exit 1
 
-ENTRYPOINT ["maptoposter-cli"]
+ENTRYPOINT ["maptoart-cli"]

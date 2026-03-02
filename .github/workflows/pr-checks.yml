@@ -42,13 +42,13 @@ jobs:
         run: python -m compileall src/ tests/ -q
 
       - name: Test CLI help
-        run: maptoposter-cli --help
+        run: maptoart-cli --help
 
       - name: Test list themes
-        run: maptoposter-cli --list-themes
+        run: maptoart-cli --list-themes
 
       - name: Run tests
-        run: pytest --cov=maptoposter --cov-report=term-missing --cov-fail-under=100
+        run: pytest --cov=maptoart --cov-report=term-missing --cov-fail-under=100
 
       - name: Lint with flake8
         run: |

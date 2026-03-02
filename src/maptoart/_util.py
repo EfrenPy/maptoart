@@ -1,8 +1,8 @@
-"""Shared utilities for the maptoposter package (no internal imports).
+"""Shared utilities for the maptoart package (no internal imports).
 
 Environment variables read at **import time** (changes after import are ignored):
 
-* ``MAPTOPOSTER_CACHE_DIR`` / ``CACHE_DIR`` — directory for OSM data cache
+* ``MAPTOART_CACHE_DIR`` / ``MAPTOPOSTER_CACHE_DIR`` / ``CACHE_DIR`` — directory for OSM data cache
   (default: ``./cache``).
 """
 
@@ -70,7 +70,9 @@ class StatusReporter:
             try:
                 self._on_progress(event, message, extra)
             except Exception:
-                _logger.warning("on_progress callback failed for event '%s'", event, exc_info=True)
+                _logger.warning(
+                    "on_progress callback failed for event '%s'", event, exc_info=True
+                )
         payload = {
             "event": event,
             "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -129,14 +131,18 @@ _logger = logging.getLogger(__name__)
 
 MAX_INPUT_FILE_SIZE = 1_048_576  # 1 MB — shared limit for config/batch files
 
-CACHE_DIR_PATH = os.environ.get("MAPTOPOSTER_CACHE_DIR", os.environ.get("CACHE_DIR", "cache"))
+CACHE_DIR_PATH = (
+    os.environ.get("MAPTOART_CACHE_DIR")
+    or os.environ.get("MAPTOPOSTER_CACHE_DIR")
+    or os.environ.get("CACHE_DIR", "cache")
+)
 CACHE_DIR = Path(CACHE_DIR_PATH)
 _CACHE_VERSION = "v2"
 # Coordinates rarely change and geocoding is rate-limited, so cache for 30 days.
-_CACHE_TTL_COORDS = 30 * 24 * 3600   # 30 days
+_CACHE_TTL_COORDS = 30 * 24 * 3600  # 30 days
 # OSM road/feature data changes more frequently; 7 days balances freshness
 # against Overpass API rate limits and download times.
-_CACHE_TTL_DATA = 7 * 24 * 3600      # 7 days
+_CACHE_TTL_DATA = 7 * 24 * 3600  # 7 days
 
 
 _MAX_CACHE_KEY_LEN = 180  # keep total path under filesystem limits
@@ -165,7 +171,7 @@ def _cache_path(key: str) -> Path:
     Returns:
         Path to cache file with .pkl extension
     """
-    safe = re.sub(r'[^\w\-.]', '_', key)
+    safe = re.sub(r"[^\w\-.]", "_", key)
     if len(safe) > _MAX_CACHE_KEY_LEN:
         suffix = hashlib.sha256(safe.encode()).hexdigest()[:16]
         safe = safe[:_MAX_CACHE_KEY_LEN] + "_" + suffix
@@ -217,19 +223,28 @@ class _RestrictedUnpickler(pickle.Unpickler):
     """
 
     # Top-level module prefixes considered safe for deserialization.
-    _ALLOWED_TOP_MODULES: ClassVar[frozenset[str]] = frozenset({
-        "builtins", "collections", "copy_reg", "copyreg",
-        "datetime", "numpy", "pandas", "geopandas",
-        "shapely", "networkx", "pyproj", "_codecs",
-    })
+    _ALLOWED_TOP_MODULES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "builtins",
+            "collections",
+            "copy_reg",
+            "copyreg",
+            "datetime",
+            "numpy",
+            "pandas",
+            "geopandas",
+            "shapely",
+            "networkx",
+            "pyproj",
+            "_codecs",
+        }
+    )
 
     def find_class(self, module: str, name: str) -> type:
         top = module.split(".")[0]
         if top in self._ALLOWED_TOP_MODULES:
             return super().find_class(module, name)
-        raise pickle.UnpicklingError(
-            f"Blocked unpickling of {module}.{name}"
-        )
+        raise pickle.UnpicklingError(f"Blocked unpickling of {module}.{name}")
 
 
 def cache_get(key: str, *, default_ttl: int | None = None) -> Any:
@@ -310,7 +325,8 @@ def cache_set(key: str, value: Any, *, ttl: int | None = None) -> None:
         data = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
         sig = _compute_file_hmac(data)
         tmp_fd, tmp_path = tempfile.mkstemp(
-            suffix=".tmp", dir=str(CACHE_DIR),
+            suffix=".tmp",
+            dir=str(CACHE_DIR),
         )
         try:
             with os.fdopen(tmp_fd, "wb") as f:
@@ -365,10 +381,12 @@ def cache_info() -> dict[str, Any]:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 pass
-        entries.append({
-            "key": f.stem,
-            "size_bytes": size,
-            "created": meta.get("created"),
-            "ttl": meta.get("ttl"),
-        })
+        entries.append(
+            {
+                "key": f.stem,
+                "size_bytes": size,
+                "created": meta.get("created"),
+                "ttl": meta.get("ttl"),
+            }
+        )
     return {"total_files": len(entries), "total_bytes": total_bytes, "entries": entries}

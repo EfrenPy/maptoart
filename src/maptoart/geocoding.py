@@ -13,9 +13,21 @@ from typing import TYPE_CHECKING
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut, GeocoderUnavailable
 from geopy.geocoders import Nominatim
 from geopy.location import Location
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
-from ._util import CacheError, StatusReporter, _CACHE_TTL_COORDS, _emit_status, cache_get, cache_set
+from ._util import (
+    CacheError,
+    StatusReporter,
+    _CACHE_TTL_COORDS,
+    _emit_status,
+    cache_get,
+    cache_set,
+)
 
 if TYPE_CHECKING:
     from .core import PosterGenerationOptions
@@ -23,38 +35,42 @@ if TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 try:
-    _MAPTOPOSTER_VERSION = version("maptoposter")
+    _MAPTOART_VERSION = version("maptoart")
 except PackageNotFoundError:  # pragma: no cover
-    _MAPTOPOSTER_VERSION = "0.0.0"
+    _MAPTOART_VERSION = "0.0.0"
 
-# Nominatim usage policy requires max 1 request/second.  Configurable via
-# MAPTOPOSTER_NOMINATIM_DELAY for testing or when using a private instance.
+# Nominatim usage policy requires max 1 request/second. Configurable via
+# MAPTOART_NOMINATIM_DELAY (or legacy MAPTOPOSTER_NOMINATIM_DELAY).
 _NOMINATIM_DELAY_DEFAULT = 1.0
 
 
 def _nominatim_delay() -> float:
     """Return the configured Nominatim rate-limit delay (lazy env-var read)."""
-    raw = os.environ.get("MAPTOPOSTER_NOMINATIM_DELAY")
+    raw = os.environ.get("MAPTOART_NOMINATIM_DELAY") or os.environ.get(
+        "MAPTOPOSTER_NOMINATIM_DELAY"
+    )
     if raw is None:
         return _NOMINATIM_DELAY_DEFAULT
     try:
         val = float(raw)
         if not math.isfinite(val):
             _logger.warning(
-                "MAPTOPOSTER_NOMINATIM_DELAY=%r is not finite, using default %.1fs",
-                raw, _NOMINATIM_DELAY_DEFAULT,
+                "MAPTOART_NOMINATIM_DELAY=%r is not finite, using default %.1fs",
+                raw,
+                _NOMINATIM_DELAY_DEFAULT,
             )
             return _NOMINATIM_DELAY_DEFAULT
         if val < 0:
             _logger.warning(
-                "MAPTOPOSTER_NOMINATIM_DELAY=%r is negative, clamping to 0.0",
+                "MAPTOART_NOMINATIM_DELAY=%r is negative, clamping to 0.0",
                 raw,
             )
         return max(0.0, val)
     except ValueError:
         _logger.warning(
-            "Invalid MAPTOPOSTER_NOMINATIM_DELAY=%r, using default %.1fs",
-            raw, _NOMINATIM_DELAY_DEFAULT,
+            "Invalid MAPTOART_NOMINATIM_DELAY=%r, using default %.1fs",
+            raw,
+            _NOMINATIM_DELAY_DEFAULT,
         )
         return _NOMINATIM_DELAY_DEFAULT
 
@@ -92,7 +108,9 @@ def _resolve_coordinates(
         )
 
     if has_lat and has_lon:
-        assert options.latitude is not None and options.longitude is not None  # narrowing
+        assert (
+            options.latitude is not None and options.longitude is not None
+        )  # narrowing
         result = (options.latitude, options.longitude)
     else:
         result = get_coordinates(
@@ -139,7 +157,7 @@ def get_coordinates(
         country=country,
     )
     geolocator = Nominatim(
-        user_agent=f"maptoposter/{_MAPTOPOSTER_VERSION} (https://github.com/EfrenPy/maptoposter)",
+        user_agent=f"maptoart/{_MAPTOART_VERSION} (https://github.com/EfrenPy/maptoart)",
         timeout=10,
     )
 
@@ -180,7 +198,11 @@ def get_coordinates(
 
     if location:
         addr = getattr(location, "address", None)
-        message = f"\u2713 Found: {addr}" if addr else "\u2713 Found location (address not available)"
+        message = (
+            f"\u2713 Found: {addr}"
+            if addr
+            else "\u2713 Found location (address not available)"
+        )
         _emit_status(
             status_reporter,
             "geocode.result",
@@ -198,7 +220,9 @@ def get_coordinates(
             longitude=location.longitude,
         )
         try:
-            cache_set(coords, (location.latitude, location.longitude), ttl=_CACHE_TTL_COORDS)
+            cache_set(
+                coords, (location.latitude, location.longitude), ttl=_CACHE_TTL_COORDS
+            )
         except CacheError as e:
             _logger.warning("Failed to cache coordinates: %s", e)
         return (location.latitude, location.longitude)

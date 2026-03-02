@@ -1,4 +1,4 @@
-"""Unit tests for lightweight helpers in maptoposter.core."""
+"""Unit tests for lightweight helpers in maptoart.core."""
 
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ import pytest
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut
 from osmnx._errors import InsufficientResponseError
 
-import maptoposter._util as _util
-import maptoposter.core as core
-from maptoposter._util import CacheError
-from maptoposter.core import PosterGenerationOptions
+import maptoart._util as _util
+import maptoart.core as core
+from maptoart._util import CacheError
+from maptoart.core import PosterGenerationOptions
 
 from conftest import SAMPLE_THEME_DATA
 
@@ -66,7 +66,7 @@ def test_resolve_coordinates_calls_geocode(
         assert (city, country) == ("Paris", "France")
         return (1.23, 4.56)
 
-    import maptoposter.geocoding as geocoding_mod
+    import maptoart.geocoding as geocoding_mod
 
     monkeypatch.setattr(geocoding_mod, "get_coordinates", fake_get_coordinates)
     coords = core._resolve_coordinates(options, silent_reporter)
@@ -100,8 +100,8 @@ def test_get_edge_colors_by_type_uses_theme_palette(
 class TestCreatePosterPipeline:
     """Tests for the create_poster pipeline using mocked fetch calls."""
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
     def test_create_poster_raises_on_no_graph(
         self,
         mock_fetch_graph: MagicMock,
@@ -115,12 +115,12 @@ class TestCreatePosterPipeline:
                 "/tmp/out.png", "png", theme=sample_theme,
             )
 
-    @patch("maptoposter.core._save_output")
-    @patch("maptoposter.core._apply_typography")
-    @patch("maptoposter.core._render_layers")
-    @patch("maptoposter.core._setup_figure", return_value=(MagicMock(), MagicMock()))
-    @patch("maptoposter.core.ox.project_graph")
-    @patch("maptoposter.core._fetch_map_data")
+    @patch("maptoart.core._save_output")
+    @patch("maptoart.core._apply_typography")
+    @patch("maptoart.core._render_layers")
+    @patch("maptoart.core._setup_figure", return_value=(MagicMock(), MagicMock()))
+    @patch("maptoart.core.ox.project_graph")
+    @patch("maptoart.core._fetch_map_data")
     def test_create_poster_success_path(
         self,
         mock_fetch: MagicMock,
@@ -165,10 +165,10 @@ class TestCreatePosterPipeline:
         assert save_args[2] == "png"  # output_format
 
 
-    @patch("maptoposter.core._save_output")
-    @patch("maptoposter.core._apply_typography")
-    @patch("maptoposter.core._render_layers")
-    @patch("maptoposter.core._setup_figure", return_value=(MagicMock(), MagicMock()))
+    @patch("maptoart.core._save_output")
+    @patch("maptoart.core._apply_typography")
+    @patch("maptoart.core._render_layers")
+    @patch("maptoart.core._setup_figure", return_value=(MagicMock(), MagicMock()))
     def test_create_poster_with_prefetched_data(
         self,
         mock_setup: MagicMock,
@@ -186,8 +186,8 @@ class TestCreatePosterPipeline:
         g_proj.add_edge("x", "y")
         prefetched = (g, None, None, 4500.0)
 
-        with patch("maptoposter.core._fetch_map_data") as mock_fetch, \
-             patch("maptoposter.core.ox.project_graph") as mock_project:
+        with patch("maptoart.core._fetch_map_data") as mock_fetch, \
+             patch("maptoart.core.ox.project_graph") as mock_project:
             core.create_poster(
                 "Paris", "France", (48.8566, 2.3522), 10000,
                 "/tmp/out.png", "png", theme=sample_theme,
@@ -206,12 +206,12 @@ class TestCreatePosterPipeline:
 class TestGeneratePosters:
     """Tests for the generate_posters orchestrator."""
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core.ox.project_graph")
-    @patch("maptoposter.core._fetch_map_data")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core.ox.project_graph")
+    @patch("maptoart.core._fetch_map_data")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core._load_custom_fonts", return_value=None)
     def test_single_theme(
         self,
         mock_fonts: MagicMock,
@@ -232,12 +232,12 @@ class TestGeneratePosters:
         assert len(outputs) == 1
         mock_create.assert_called_once()
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core.ox.project_graph")
-    @patch("maptoposter.core._fetch_map_data")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core.ox.project_graph")
+    @patch("maptoart.core._fetch_map_data")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core._load_custom_fonts", return_value=None)
     def test_multiple_themes(
         self,
         mock_fonts: MagicMock,
@@ -265,12 +265,12 @@ class TestGeneratePosters:
         assert len(outputs) == 2
         assert mock_create.call_count == 2
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core.ox.project_graph")
-    @patch("maptoposter.core._fetch_map_data")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core.ox.project_graph")
+    @patch("maptoart.core._fetch_map_data")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core._load_custom_fonts", return_value=None)
     def test_hoisted_fetch_called_once_for_multiple_themes(
         self,
         mock_fonts: MagicMock,
@@ -321,8 +321,8 @@ class TestWriteMetadata:
 class TestGetCoordinates:
     """Tests for geocoding error paths."""
 
-    @patch("maptoposter.geocoding.Nominatim")
-    @patch("maptoposter.geocoding.cache_get", return_value=None)
+    @patch("maptoart.geocoding.Nominatim")
+    @patch("maptoart.geocoding.cache_get", return_value=None)
     def test_geocoding_network_failure(
         self,
         mock_cache: MagicMock,
@@ -335,8 +335,8 @@ class TestGetCoordinates:
         with pytest.raises(ValueError, match="Check your internet connection"):
             core.get_coordinates("Nowhere", "Land")
 
-    @patch("maptoposter.geocoding.Nominatim")
-    @patch("maptoposter.geocoding.cache_get", return_value=None)
+    @patch("maptoart.geocoding.Nominatim")
+    @patch("maptoart.geocoding.cache_get", return_value=None)
     def test_geocoding_not_found(
         self,
         mock_cache: MagicMock,
@@ -362,7 +362,7 @@ class TestAtomicWriteText:
         target = tmp_path / "output.txt"
         target.write_text("original")
 
-        with patch("maptoposter._util.os.fdopen", side_effect=OSError("disk full")):
+        with patch("maptoart._util.os.fdopen", side_effect=OSError("disk full")):
             with pytest.raises(OSError, match="disk full"):
                 core._atomic_write_text(target, "new content")
 
@@ -524,9 +524,9 @@ class TestEmitStatus:
 class TestFetchGraph:
     """Tests for fetch_graph with mocked OSM calls."""
 
-    @patch("maptoposter.core.cache_get", return_value=None)
-    @patch("maptoposter.core.ox.graph_from_point")
-    @patch("maptoposter.core.cache_set")
+    @patch("maptoart.core.cache_get", return_value=None)
+    @patch("maptoart.core.ox.graph_from_point")
+    @patch("maptoart.core.cache_set")
     def test_successful_fetch(
         self, mock_set: MagicMock, mock_graph: MagicMock, mock_cache: MagicMock,
     ) -> None:
@@ -539,15 +539,15 @@ class TestFetchGraph:
         assert result.number_of_edges() == 1
         mock_set.assert_called_once()
 
-    @patch("maptoposter.core.cache_get", return_value=None)
-    @patch("maptoposter.core.ox.graph_from_point", side_effect=InsufficientResponseError("OSM error"))
+    @patch("maptoart.core.cache_get", return_value=None)
+    @patch("maptoart.core.ox.graph_from_point", side_effect=InsufficientResponseError("OSM error"))
     def test_fetch_failure_returns_none(
         self, mock_graph: MagicMock, mock_cache: MagicMock,
     ) -> None:
         result = core.fetch_graph((48.0, 2.0), 10000)
         assert result is None
 
-    @patch("maptoposter.core.cache_get")
+    @patch("maptoart.core.cache_get")
     def test_cache_hit(self, mock_cache: MagicMock) -> None:
         g = nx.MultiDiGraph()
         mock_cache.return_value = g
@@ -558,9 +558,9 @@ class TestFetchGraph:
 class TestFetchFeatures:
     """Tests for fetch_features with mocked OSM calls."""
 
-    @patch("maptoposter.core.cache_get", return_value=None)
-    @patch("maptoposter.core.ox.features_from_point")
-    @patch("maptoposter.core.cache_set")
+    @patch("maptoart.core.cache_get", return_value=None)
+    @patch("maptoart.core.ox.features_from_point")
+    @patch("maptoart.core.cache_set")
     def test_successful_fetch(
         self, mock_set: MagicMock, mock_features: MagicMock, mock_cache: MagicMock,
     ) -> None:
@@ -572,8 +572,8 @@ class TestFetchFeatures:
         )
         assert result is mock_gdf
 
-    @patch("maptoposter.core.cache_get", return_value=None)
-    @patch("maptoposter.core.ox.features_from_point", side_effect=InsufficientResponseError("OSM error"))
+    @patch("maptoart.core.cache_get", return_value=None)
+    @patch("maptoart.core.ox.features_from_point", side_effect=InsufficientResponseError("OSM error"))
     def test_fetch_failure_returns_none(
         self, mock_features: MagicMock, mock_cache: MagicMock,
     ) -> None:
@@ -582,7 +582,7 @@ class TestFetchFeatures:
         )
         assert result is None
 
-    @patch("maptoposter.core.cache_get")
+    @patch("maptoart.core.cache_get")
     def test_cache_hit(self, mock_cache: MagicMock) -> None:
         mock_gdf = MagicMock()
         mock_cache.return_value = mock_gdf
@@ -628,12 +628,12 @@ class TestLoadCustomFonts:
         result = core._load_custom_fonts(None, None)
         assert result is None
 
-    @patch("maptoposter.core.load_fonts", return_value=None)
+    @patch("maptoart.core.load_fonts", return_value=None)
     def test_failed_load_returns_none(self, mock_load: MagicMock) -> None:
         result = core._load_custom_fonts("NonExistentFont", None)
         assert result is None
 
-    @patch("maptoposter.core.load_fonts", return_value={"bold": "b", "regular": "r", "light": "l"})
+    @patch("maptoart.core.load_fonts", return_value={"bold": "b", "regular": "r", "light": "l"})
     def test_successful_load(self, mock_load: MagicMock) -> None:
         result = core._load_custom_fonts("TestFont", None)
         assert result is not None
@@ -643,7 +643,7 @@ class TestLoadCustomFonts:
 class TestGetCoordinatesCacheHit:
     """Test cache hit path for get_coordinates."""
 
-    @patch("maptoposter.geocoding.cache_get", return_value=(48.8566, 2.3522))
+    @patch("maptoart.geocoding.cache_get", return_value=(48.8566, 2.3522))
     def test_cache_hit_returns_coords(self, mock_cache: MagicMock) -> None:
         result = core.get_coordinates("Paris", "France")
         assert result == (48.8566, 2.3522)
@@ -652,9 +652,9 @@ class TestGetCoordinatesCacheHit:
 class TestGetCoordinatesSuccess:
     """Test successful geocode path."""
 
-    @patch("maptoposter.geocoding.cache_set")
-    @patch("maptoposter.geocoding.Nominatim")
-    @patch("maptoposter.geocoding.cache_get", return_value=None)
+    @patch("maptoart.geocoding.cache_set")
+    @patch("maptoart.geocoding.Nominatim")
+    @patch("maptoart.geocoding.cache_get", return_value=None)
     def test_successful_geocode(
         self, mock_cache_get: MagicMock, mock_nom_cls: MagicMock, mock_cache_set: MagicMock,
     ) -> None:
@@ -753,10 +753,10 @@ class TestPosterGenerationOptionsValidation:
 class TestRenderThemeWorker:
     """Tests for the _render_theme_worker function (parallel theme rendering)."""
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/poster.json")
-    @patch("maptoposter.core._build_poster_metadata", return_value={"city": "Paris"})
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core.load_theme", return_value={"name": "Noir"})
+    @patch("maptoart.core._write_metadata", return_value="/tmp/poster.json")
+    @patch("maptoart.core._build_poster_metadata", return_value={"city": "Paris"})
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core.load_theme", return_value={"name": "Noir"})
     def test_worker_calls_create_poster_and_writes_metadata(
         self,
         mock_load_theme: MagicMock,
@@ -789,12 +789,12 @@ class TestRenderThemeWorker:
 class TestParallelThemeRendering:
     """Tests for the parallel branch of generate_posters()."""
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core.ox.project_graph")
-    @patch("maptoposter.core._fetch_map_data")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core.ox.project_graph")
+    @patch("maptoart.core._fetch_map_data")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core._load_custom_fonts", return_value=None)
     def test_parallel_themes_uses_process_pool(
         self,
         mock_fonts: MagicMock,
@@ -834,8 +834,8 @@ class TestParallelThemeRendering:
         def fake_as_completed(future_dict: dict) -> list:
             return list(future_dict.keys())
 
-        with patch("maptoposter.core.ProcessPoolExecutor", return_value=mock_executor), \
-             patch("maptoposter.core.as_completed", side_effect=fake_as_completed):
+        with patch("maptoart.core.ProcessPoolExecutor", return_value=mock_executor), \
+             patch("maptoart.core.as_completed", side_effect=fake_as_completed):
             options = PosterGenerationOptions(
                 city="Paris", country="France",
                 themes=["alpha", "beta"], parallel_themes=True,
@@ -845,12 +845,12 @@ class TestParallelThemeRendering:
         assert len(outputs) == 2
         assert mock_executor.submit.call_count == 2
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core.ox.project_graph")
-    @patch("maptoposter.core._fetch_map_data")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core.ox.project_graph")
+    @patch("maptoart.core._fetch_map_data")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core._load_custom_fonts", return_value=None)
     def test_parallel_themes_handles_worker_failure(
         self,
         mock_fonts: MagicMock,
@@ -892,8 +892,8 @@ class TestParallelThemeRendering:
         def fake_as_completed(future_dict: dict) -> list:
             return list(future_dict.keys())
 
-        with patch("maptoposter.core.ProcessPoolExecutor", return_value=mock_executor), \
-             patch("maptoposter.core.as_completed", side_effect=fake_as_completed):
+        with patch("maptoart.core.ProcessPoolExecutor", return_value=mock_executor), \
+             patch("maptoart.core.as_completed", side_effect=fake_as_completed):
             options = PosterGenerationOptions(
                 city="Paris", country="France",
                 themes=["alpha", "beta"], parallel_themes=True,
@@ -908,8 +908,8 @@ class TestParallelThemeRendering:
 class TestGetCoordinatesRetry:
     """Tests for geocoding retry with backoff."""
 
-    @patch("maptoposter.geocoding.Nominatim")
-    @patch("maptoposter.geocoding.cache_get", return_value=None)
+    @patch("maptoart.geocoding.Nominatim")
+    @patch("maptoart.geocoding.cache_get", return_value=None)
     def test_successful_retry_on_timeout(
         self, mock_cache: MagicMock, mock_nominatim_cls: MagicMock,
     ) -> None:
@@ -928,8 +928,8 @@ class TestGetCoordinatesRetry:
         assert result == (48.8566, 2.3522)
         assert mock_geo.geocode.call_count == 2
 
-    @patch("maptoposter.geocoding.Nominatim")
-    @patch("maptoposter.geocoding.cache_get", return_value=None)
+    @patch("maptoart.geocoding.Nominatim")
+    @patch("maptoart.geocoding.cache_get", return_value=None)
     def test_failure_after_max_retries(
         self, mock_cache: MagicMock, mock_nominatim_cls: MagicMock,
     ) -> None:
@@ -1005,7 +1005,7 @@ class TestResolveCoordinatesValidation:
 class TestGetCropLimits:
     """Tests for get_crop_limits aspect ratio logic."""
 
-    @patch("maptoposter.rendering.ox.projection.project_geometry")
+    @patch("maptoart.rendering.ox.projection.project_geometry")
     def test_landscape_aspect(self, mock_proj: MagicMock) -> None:
         from shapely.geometry import Point as ShapelyPoint
         mock_proj.return_value = (ShapelyPoint(500000, 6000000), None)
@@ -1019,7 +1019,7 @@ class TestGetCropLimits:
         half_y = (ylim[1] - ylim[0]) / 2
         assert half_y < half_x  # landscape: y is reduced
 
-    @patch("maptoposter.rendering.ox.projection.project_geometry")
+    @patch("maptoart.rendering.ox.projection.project_geometry")
     def test_portrait_aspect(self, mock_proj: MagicMock) -> None:
         from shapely.geometry import Point as ShapelyPoint
         mock_proj.return_value = (ShapelyPoint(500000, 6000000), None)
@@ -1033,7 +1033,7 @@ class TestGetCropLimits:
         half_y = (ylim[1] - ylim[0]) / 2
         assert half_x < half_y  # portrait: x is reduced
 
-    @patch("maptoposter.rendering.ox.projection.project_geometry")
+    @patch("maptoart.rendering.ox.projection.project_geometry")
     def test_square_aspect(self, mock_proj: MagicMock) -> None:
         from shapely.geometry import Point as ShapelyPoint
         mock_proj.return_value = (ShapelyPoint(500000, 6000000), None)
@@ -1051,7 +1051,7 @@ class TestGetCropLimits:
 class TestApplyTypography:
     """Tests for _apply_typography text rendering."""
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_cjk_city_no_spacing(self, mock_fp: MagicMock) -> None:
         fig = MagicMock()
         ax = MagicMock()
@@ -1066,7 +1066,7 @@ class TestApplyTypography:
         city_text = city_call[0][2]
         assert "  " not in city_text  # CJK: no letter spacing
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_long_city_name_reduced_font(self, mock_fp: MagicMock) -> None:
         fig = MagicMock()
         ax = MagicMock()
@@ -1089,7 +1089,7 @@ class TestApplyTypography:
         real_sizes = [s for s in sizes if s != 999]
         assert any(s < base_main for s in real_sizes)
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_negative_coords_display(self, mock_fp: MagicMock) -> None:
         fig = MagicMock()
         ax = MagicMock()
@@ -1105,7 +1105,7 @@ class TestApplyTypography:
         assert "S" in coords_text
         assert "W" in coords_text
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_show_attribution_false(self, mock_fp: MagicMock) -> None:
         fig = MagicMock()
         ax = MagicMock()
@@ -1123,9 +1123,9 @@ class TestApplyTypography:
 class TestRenderLayers:
     """Tests for _render_layers with mocked dependencies."""
 
-    @patch("maptoposter.rendering.create_gradient_fade")
-    @patch("maptoposter.rendering.get_crop_limits", return_value=((0, 1), (0, 1)))
-    @patch("maptoposter.rendering.ox.plot_graph")
+    @patch("maptoart.rendering.create_gradient_fade")
+    @patch("maptoart.rendering.get_crop_limits", return_value=((0, 1), (0, 1)))
+    @patch("maptoart.rendering.ox.plot_graph")
     def test_none_water_and_parks_no_crash(
         self,
         mock_plot: MagicMock,
@@ -1183,16 +1183,16 @@ class TestApplyPaperSizeClamping:
 class TestFetchMapData:
     """Tests for _fetch_map_data."""
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph", return_value=None)
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph", return_value=None)
     def test_raises_on_no_graph(
         self, mock_graph: MagicMock, mock_features: MagicMock,
     ) -> None:
         with pytest.raises(RuntimeError, match="Failed to retrieve street network"):
             core._fetch_map_data((48.0, 2.0), 10000, 12, 16)
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
     def test_returns_tuple_on_success(
         self, mock_graph: MagicMock, mock_features: MagicMock,
     ) -> None:
@@ -1224,8 +1224,8 @@ class TestSetupFigure:
 class TestFetchGraphStatusCodeError:
     """Test ResponseStatusCodeError returns None."""
 
-    @patch("maptoposter.core.cache_get", return_value=None)
-    @patch("maptoposter.core.ox.graph_from_point")
+    @patch("maptoart.core.cache_get", return_value=None)
+    @patch("maptoart.core.ox.graph_from_point")
     def test_status_code_error_returns_none(
         self, mock_graph: MagicMock, mock_cache: MagicMock,
     ) -> None:
@@ -1280,10 +1280,10 @@ class TestCacheVersioning:
 class TestGeneratePostersResume:
     """Test that --all-themes resume continues past failures."""
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core._load_custom_fonts", return_value=None)
     def test_first_theme_fails_second_succeeds(
         self,
         mock_fonts: MagicMock,
@@ -1342,8 +1342,8 @@ class TestThemeNameSanitization:
 class TestSparseRoadWarning:
     """Tests for sparse road network warning."""
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
     def test_sparse_network_emits_warning(
         self,
         mock_graph: MagicMock,
@@ -1414,7 +1414,7 @@ class TestIsLatinScriptExtended:
 class TestNonLatinTypography:
     """Tests for non-Latin city typography behavior."""
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_non_latin_city_no_letter_spacing(self, mock_fp: MagicMock) -> None:
         fig = MagicMock()
         ax = MagicMock()
@@ -1428,7 +1428,7 @@ class TestNonLatinTypography:
         city_text = city_call[0][2]
         assert "  " not in city_text
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_latin_city_has_letter_spacing(self, mock_fp: MagicMock) -> None:
         fig = MagicMock()
         ax = MagicMock()
@@ -1446,8 +1446,8 @@ class TestNonLatinTypography:
 class TestParallelFetch:
     """Tests for parallel _fetch_map_data."""
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
     def test_parallel_fetch_all_called(
         self, mock_graph: MagicMock, mock_features: MagicMock,
     ) -> None:
@@ -1461,8 +1461,8 @@ class TestParallelFetch:
         mock_graph.assert_called_once()
         assert mock_features.call_count == 2
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
     def test_parallel_feature_failure_non_fatal(
         self, mock_graph: MagicMock, mock_features: MagicMock,
     ) -> None:
@@ -1481,12 +1481,12 @@ class TestParallelFetch:
 class TestAutoDpiReduction:
     """Tests for auto DPI reduction."""
 
-    @patch("maptoposter.core._save_output")
-    @patch("maptoposter.core._apply_typography")
-    @patch("maptoposter.core._render_layers")
-    @patch("maptoposter.core._setup_figure", return_value=(MagicMock(), MagicMock()))
-    @patch("maptoposter.core.ox.project_graph")
-    @patch("maptoposter.core._fetch_map_data")
+    @patch("maptoart.core._save_output")
+    @patch("maptoart.core._apply_typography")
+    @patch("maptoart.core._render_layers")
+    @patch("maptoart.core._setup_figure", return_value=(MagicMock(), MagicMock()))
+    @patch("maptoart.core.ox.project_graph")
+    @patch("maptoart.core._fetch_map_data")
     def test_auto_dpi_reduction(
         self,
         mock_fetch: MagicMock,
@@ -1589,10 +1589,10 @@ class TestCacheInfo:
 class TestCreatePosterFromOptions:
     """Tests for the create_poster_from_options wrapper."""
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core._load_custom_fonts", return_value=None)
     def test_calls_create_poster(
         self,
         mock_fonts: MagicMock,
@@ -1686,13 +1686,13 @@ class TestEmptyCityCountryValidation:
 
 
 class TestPrintExamplesUsesCliName:
-    """Test that print_examples() uses maptoposter-cli, not old script name."""
+    """Test that print_examples() uses maptoart-cli, not old script name."""
 
     def test_no_old_script_name(self, capsys: pytest.CaptureFixture[str]) -> None:
         core.print_examples()
         output = capsys.readouterr().out
         assert "create_map_poster.py" not in output
-        assert "maptoposter-cli" in output
+        assert "maptoart-cli" in output
 
 
 class TestRestrictedUnpickler:
@@ -1740,8 +1740,8 @@ class TestRestrictedUnpickler:
 class TestFetchMapDataPartialFailure:
     """Tests for _fetch_map_data handling partial thread failures (#9)."""
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
     def test_thread_exception_logs_warning(
         self,
         mock_graph: MagicMock,
@@ -1758,7 +1758,7 @@ class TestFetchMapDataPartialFailure:
 
         import logging
 
-        with caplog.at_level(logging.WARNING, logger="maptoposter.core"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.core"):
             result = core._fetch_map_data((48.0, 2.0), 10000, 12, 16)
         assert result[0] is g  # graph still returned
 
@@ -1771,7 +1771,7 @@ class TestAtomicWriteTextCleanup:
         target = tmp_path / "output.txt"
         target.write_text("original")
 
-        with patch("maptoposter._util.os.fdopen", side_effect=OSError("disk full")):
+        with patch("maptoart._util.os.fdopen", side_effect=OSError("disk full")):
             with pytest.raises(OSError, match="disk full"):
                 core._atomic_write_text(target, "new content")
 
@@ -1783,7 +1783,7 @@ class TestAtomicWriteTextCleanup:
         target = tmp_path / "output.txt"
         target.write_text("original")
 
-        with patch("maptoposter._util.os.fdopen", side_effect=OSError("disk full")):
+        with patch("maptoart._util.os.fdopen", side_effect=OSError("disk full")):
             with pytest.raises(OSError, match="disk full"):
                 _util._atomic_write_text(target, "new content")
 
@@ -1810,7 +1810,7 @@ class TestCircularImportFix:
     """Verify geocoding module can be imported without importing core first (#4)."""
 
     def test_geocoding_import_standalone(self) -> None:
-        from maptoposter.geocoding import _resolve_coordinates  # noqa: F811
+        from maptoart.geocoding import _resolve_coordinates  # noqa: F811
 
         assert callable(_resolve_coordinates)
 
@@ -1873,27 +1873,27 @@ class TestCoordinateBoundsValidation:
     """Tests for out-of-bounds coordinate rejection (#R10-10)."""
 
     def test_latitude_out_of_range_raises(self) -> None:
-        from maptoposter.geocoding import _validate_coordinate_bounds
+        from maptoart.geocoding import _validate_coordinate_bounds
         with pytest.raises(ValueError, match="Latitude must be between"):
             _validate_coordinate_bounds(91.0, 0.0)
 
     def test_negative_latitude_out_of_range_raises(self) -> None:
-        from maptoposter.geocoding import _validate_coordinate_bounds
+        from maptoart.geocoding import _validate_coordinate_bounds
         with pytest.raises(ValueError, match="Latitude must be between"):
             _validate_coordinate_bounds(-91.0, 0.0)
 
     def test_longitude_out_of_range_raises(self) -> None:
-        from maptoposter.geocoding import _validate_coordinate_bounds
+        from maptoart.geocoding import _validate_coordinate_bounds
         with pytest.raises(ValueError, match="Longitude must be between"):
             _validate_coordinate_bounds(0.0, 181.0)
 
     def test_negative_longitude_out_of_range_raises(self) -> None:
-        from maptoposter.geocoding import _validate_coordinate_bounds
+        from maptoart.geocoding import _validate_coordinate_bounds
         with pytest.raises(ValueError, match="Longitude must be between"):
             _validate_coordinate_bounds(0.0, -181.0)
 
     def test_boundary_values_accepted(self) -> None:
-        from maptoposter.geocoding import _validate_coordinate_bounds
+        from maptoart.geocoding import _validate_coordinate_bounds
         # Should not raise
         _validate_coordinate_bounds(90.0, 180.0)
         _validate_coordinate_bounds(-90.0, -180.0)
@@ -1935,11 +1935,11 @@ class TestEdgeColorsWithMissingHighway:
 class TestProjectAndPlotLayerFallback:
     """Test _project_and_plot_layer falls back to to_crs on projection failure (#R16-7)."""
 
-    @patch("maptoposter.rendering.ox.projection.project_gdf", side_effect=ValueError("bad CRS"))
+    @patch("maptoart.rendering.ox.projection.project_gdf", side_effect=ValueError("bad CRS"))
     def test_fallback_to_crs_on_projection_error(self, mock_proj: MagicMock) -> None:
         import geopandas as gpd
         from shapely.geometry import box
-        from maptoposter.rendering import _project_and_plot_layer
+        from maptoart.rendering import _project_and_plot_layer
 
         gdf = gpd.GeoDataFrame(geometry=[box(0, 0, 1, 1)], crs="EPSG:4326")
         ax = MagicMock()
@@ -1951,7 +1951,7 @@ class TestProjectAndPlotLayerFallback:
 class TestCoordinateDisplayQuadrants:
     """Tests for coordinate display across all four hemisphere quadrants (#R11-9)."""
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_ne_quadrant(self, mock_fp: MagicMock) -> None:
         """North-East: positive lat, positive lon → N / E."""
         fig, ax = MagicMock(), MagicMock()
@@ -1963,7 +1963,7 @@ class TestCoordinateDisplayQuadrants:
         assert "S" not in coords_text
         assert "W" not in coords_text
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_nw_quadrant(self, mock_fp: MagicMock) -> None:
         """North-West: positive lat, negative lon → N / W."""
         fig, ax = MagicMock(), MagicMock()
@@ -1975,7 +1975,7 @@ class TestCoordinateDisplayQuadrants:
         assert "S" not in coords_text
         assert "E" not in coords_text
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_se_quadrant(self, mock_fp: MagicMock) -> None:
         """South-East: negative lat, positive lon → S / E."""
         fig, ax = MagicMock(), MagicMock()
@@ -1987,7 +1987,7 @@ class TestCoordinateDisplayQuadrants:
         assert "N" not in coords_text
         assert "W" not in coords_text
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_sw_quadrant(self, mock_fp: MagicMock) -> None:
         """South-West: negative lat, negative lon → S / W."""
         fig, ax = MagicMock(), MagicMock()
@@ -2069,7 +2069,7 @@ class TestConcurrentThemeCache:
 class TestVeryLongCityNameScaling:
     """Test font scaling doesn't produce invalid sizes for very long names (#R12-11)."""
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_extremely_long_city_name(self, mock_fp: MagicMock) -> None:
         fig = MagicMock()
         ax = MagicMock()
@@ -2087,7 +2087,7 @@ class TestVeryLongCityNameScaling:
             if size is not None:
                 assert size > 0, f"Font size must be positive, got {size}"
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_single_char_city_name(self, mock_fp: MagicMock) -> None:
         fig = MagicMock()
         ax = MagicMock()
@@ -2104,12 +2104,12 @@ class TestVeryLongCityNameScaling:
 class TestDeprecationVersionInWarning:
     """Test that name_label deprecation includes removal version (#R12-5)."""
 
-    @patch("maptoposter.core._fetch_map_data")
-    @patch("maptoposter.core._save_output")
-    @patch("maptoposter.core._apply_typography")
-    @patch("maptoposter.core._render_layers")
-    @patch("maptoposter.core._setup_figure", return_value=(MagicMock(), MagicMock()))
-    @patch("maptoposter.core.ox.project_graph")
+    @patch("maptoart.core._fetch_map_data")
+    @patch("maptoart.core._save_output")
+    @patch("maptoart.core._apply_typography")
+    @patch("maptoart.core._render_layers")
+    @patch("maptoart.core._setup_figure", return_value=(MagicMock(), MagicMock()))
+    @patch("maptoart.core.ox.project_graph")
     def test_name_label_warns_with_version(
         self,
         mock_proj: MagicMock,
@@ -2140,12 +2140,12 @@ class TestDeprecationVersionInWarning:
 class TestCountryLabelDeprecation:
     """Test that country_label emits a deprecation warning."""
 
-    @patch("maptoposter.core._fetch_map_data")
-    @patch("maptoposter.core._save_output")
-    @patch("maptoposter.core._apply_typography")
-    @patch("maptoposter.core._render_layers")
-    @patch("maptoposter.core._setup_figure", return_value=(MagicMock(), MagicMock()))
-    @patch("maptoposter.core.ox.project_graph")
+    @patch("maptoart.core._fetch_map_data")
+    @patch("maptoart.core._save_output")
+    @patch("maptoart.core._apply_typography")
+    @patch("maptoart.core._render_layers")
+    @patch("maptoart.core._setup_figure", return_value=(MagicMock(), MagicMock()))
+    @patch("maptoart.core.ox.project_graph")
     def test_country_label_warns_with_version(
         self,
         mock_proj: MagicMock,
@@ -2177,7 +2177,7 @@ class TestCountryLabelDeprecation:
 class TestZeroCoordinateDisplay:
     """Test that (0.0, 0.0) renders as N / E, not blank (#R14-9)."""
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_zero_lat_lon_displays_north_east(self, mock_fp: MagicMock) -> None:
         fig, ax = MagicMock(), MagicMock()
         theme = dict(SAMPLE_THEME_DATA)
@@ -2189,7 +2189,7 @@ class TestZeroCoordinateDisplay:
 class TestIncompleteFontDictFallback:
     """Test that a font dict missing required weights triggers monospace fallback (#R14-10)."""
 
-    @patch("maptoposter.rendering.FontProperties")
+    @patch("maptoart.rendering.FontProperties")
     def test_missing_bold_triggers_monospace(self, mock_fp: MagicMock) -> None:
         fig, ax = MagicMock(), MagicMock()
         theme = dict(SAMPLE_THEME_DATA)
@@ -2251,9 +2251,9 @@ class TestOutputDirPermissionError:
 class TestCachedFetchCacheWriteFailure:
     """Test that CacheError on cache_set doesn't block download (#R16-6)."""
 
-    @patch("maptoposter.core.cache_get", return_value=None)
-    @patch("maptoposter.core.cache_set", side_effect=_util.CacheError("disk full"))
-    @patch("maptoposter.core.time.sleep")
+    @patch("maptoart.core.cache_get", return_value=None)
+    @patch("maptoart.core.cache_set", side_effect=_util.CacheError("disk full"))
+    @patch("maptoart.core.time.sleep")
     def test_data_returned_despite_cache_write_failure(
         self, mock_sleep: MagicMock, mock_set: MagicMock, mock_get: MagicMock,
     ) -> None:
@@ -2269,9 +2269,9 @@ class TestCachedFetchCacheWriteFailure:
 class TestCachedFetchCacheReadFailure:
     """Test that CacheError on cache_get treats as cache miss."""
 
-    @patch("maptoposter.core.cache_get", side_effect=_util.CacheError("corrupt"))
-    @patch("maptoposter.core.cache_set")
-    @patch("maptoposter.core.time.sleep")
+    @patch("maptoart.core.cache_get", side_effect=_util.CacheError("corrupt"))
+    @patch("maptoart.core.cache_set")
+    @patch("maptoart.core.time.sleep")
     def test_cache_read_error_falls_through_to_download(
         self, mock_sleep: MagicMock, mock_set: MagicMock, mock_get: MagicMock,
     ) -> None:
@@ -2322,7 +2322,7 @@ class TestCacheSetPicklingError:
     def test_pickling_error_raises_cache_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         import pickle
         monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
-        with patch("maptoposter._util.pickle.dumps", side_effect=pickle.PicklingError("cannot pickle")):
+        with patch("maptoart._util.pickle.dumps", side_effect=pickle.PicklingError("cannot pickle")):
             with pytest.raises(_util.CacheError, match="Cache write failed"):
                 _util.cache_set("test_key", {"data": 1})
 
@@ -2332,7 +2332,7 @@ class TestCacheSetWriteFailure:
 
     def test_temp_file_cleaned_on_write_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(_util, "CACHE_DIR", tmp_path)
-        with patch("maptoposter._util.os.fdopen", side_effect=OSError("disk full")):
+        with patch("maptoart._util.os.fdopen", side_effect=OSError("disk full")):
             with pytest.raises(_util.CacheError, match="Cache write failed"):
                 _util.cache_set("test_key", {"data": 1})
         # No leftover .tmp files
@@ -2350,8 +2350,8 @@ class TestCacheClearMissingDir:
 class TestSparseNetworkWarning:
     """Test sparse network warning when graph has <10 nodes (#R17-3)."""
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
     def test_sparse_graph_emits_warning(self, mock_graph: MagicMock, mock_features: MagicMock) -> None:
         import networkx as nx
         g = nx.MultiDiGraph()
@@ -2427,7 +2427,7 @@ class TestCoordinateBoundaryValues:
     """Test coordinate validation at exact boundary values (#R17-9)."""
 
     def test_exact_boundary_values_accepted(self) -> None:
-        from maptoposter.geocoding import _validate_coordinate_bounds
+        from maptoart.geocoding import _validate_coordinate_bounds
         # All boundary values should pass without raising
         _validate_coordinate_bounds(-90, 0)
         _validate_coordinate_bounds(90, 0)
@@ -2435,7 +2435,7 @@ class TestCoordinateBoundaryValues:
         _validate_coordinate_bounds(0, 180)
 
     def test_just_beyond_boundary_raises(self) -> None:
-        from maptoposter.geocoding import _validate_coordinate_bounds
+        from maptoart.geocoding import _validate_coordinate_bounds
         with pytest.raises(ValueError, match="Latitude"):
             _validate_coordinate_bounds(-90.001, 0)
         with pytest.raises(ValueError, match="Longitude"):
@@ -2447,10 +2447,10 @@ class TestInitVersionFallback:
 
     def test_version_fallback(self) -> None:
         from importlib.metadata import PackageNotFoundError
-        with patch("importlib.metadata.version", side_effect=PackageNotFoundError("maptoposter")):
+        with patch("importlib.metadata.version", side_effect=PackageNotFoundError("maptoart")):
             try:
                 from importlib.metadata import version as ver_func
-                v = ver_func("maptoposter")
+                v = ver_func("maptoart")
             except PackageNotFoundError:
                 v = "0.0.0"
             assert v == "0.0.0"
@@ -2528,7 +2528,7 @@ class TestSaveOutputOSErrorCleanup:
     ) -> None:
         output_file = str(tmp_path / "test.png")
         fig = MagicMock()
-        with patch("maptoposter.core.plt") as mock_plt:
+        with patch("maptoart.core.plt") as mock_plt:
             mock_plt.savefig.side_effect = OSError("disk full")
             with pytest.raises(OSError, match="disk full"):
                 core._save_output(
@@ -2543,11 +2543,11 @@ class TestSaveOutputOSErrorCleanup:
 class TestGeneratePostersNoFontsWarning:
     """Test generate_posters logs warning when no fonts available (#R18-7)."""
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.core._load_custom_fonts", return_value=None)
-    @patch("maptoposter.core._get_fonts", return_value=None)
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core._load_custom_fonts", return_value=None)
+    @patch("maptoart.core._get_fonts", return_value=None)
     def test_warning_when_no_fonts(
         self,
         mock_bundled: MagicMock,
@@ -2560,7 +2560,7 @@ class TestGeneratePostersNoFontsWarning:
     ) -> None:
         import logging
         options = PosterGenerationOptions(city="Paris", country="France", theme="custom")
-        with caplog.at_level(logging.WARNING, logger="maptoposter.core"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.core"):
             core.generate_posters(options)
         assert any("monospace" in r.message for r in caplog.records)
 
@@ -2568,10 +2568,10 @@ class TestGeneratePostersNoFontsWarning:
 class TestGeneratePostersJsonModeBanners:
     """Test generate_posters skips banners in json_mode (#R18-8)."""
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core._load_custom_fonts", return_value=None)
     def test_json_mode_skips_banners(
         self,
         mock_custom: MagicMock,
@@ -2588,10 +2588,10 @@ class TestGeneratePostersJsonModeBanners:
         # Banner ("===" lines) should NOT appear in json_mode
         assert "City Map Poster Generator" not in output
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.core._load_custom_fonts", return_value=None)
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core._load_custom_fonts", return_value=None)
     def test_non_json_mode_shows_banners(
         self,
         mock_custom: MagicMock,
@@ -2624,9 +2624,9 @@ class TestCacheInfoNonexistentDir:
 class TestGeocodingCoroutineHandling:
     """Test geocoding when _geocode_with_retry returns a coroutine (#R19-6)."""
 
-    @patch("maptoposter.geocoding.cache_get", return_value=None)
-    @patch("maptoposter.geocoding.cache_set")
-    @patch("maptoposter.geocoding._geocode_with_retry")
+    @patch("maptoart.geocoding.cache_get", return_value=None)
+    @patch("maptoart.geocoding.cache_set")
+    @patch("maptoart.geocoding._geocode_with_retry")
     def test_coroutine_resolved_via_asyncio_run(
         self,
         mock_geocode: MagicMock,
@@ -2634,7 +2634,7 @@ class TestGeocodingCoroutineHandling:
         mock_cache_get: MagicMock,
     ) -> None:
         import asyncio
-        from maptoposter.geocoding import get_coordinates
+        from maptoart.geocoding import get_coordinates
 
         # Create a real coroutine that returns a mock Location
         mock_location = MagicMock()
@@ -2654,16 +2654,16 @@ class TestGeocodingCoroutineHandling:
 class TestGeocodingMissingAddress:
     """Test geocoding when location.address is None (#R19-7)."""
 
-    @patch("maptoposter.geocoding.cache_get", return_value=None)
-    @patch("maptoposter.geocoding.cache_set")
-    @patch("maptoposter.geocoding._geocode_with_retry")
+    @patch("maptoart.geocoding.cache_get", return_value=None)
+    @patch("maptoart.geocoding.cache_set")
+    @patch("maptoart.geocoding._geocode_with_retry")
     def test_missing_address_uses_fallback_message(
         self,
         mock_geocode: MagicMock,
         mock_cache_set: MagicMock,
         mock_cache_get: MagicMock,
     ) -> None:
-        from maptoposter.geocoding import get_coordinates
+        from maptoart.geocoding import get_coordinates
 
         mock_location = MagicMock()
         mock_location.latitude = 48.8566
@@ -2691,9 +2691,9 @@ class TestGeocodingMissingAddress:
 class TestGeocodingCacheSetFailure:
     """Test geocoding when cache_set raises CacheError (#R19-7b)."""
 
-    @patch("maptoposter.geocoding.cache_get", return_value=None)
-    @patch("maptoposter.geocoding.cache_set", side_effect=_util.CacheError("write failed"))
-    @patch("maptoposter.geocoding._geocode_with_retry")
+    @patch("maptoart.geocoding.cache_get", return_value=None)
+    @patch("maptoart.geocoding.cache_set", side_effect=_util.CacheError("write failed"))
+    @patch("maptoart.geocoding._geocode_with_retry")
     def test_cache_write_failure_does_not_block(
         self,
         mock_geocode: MagicMock,
@@ -2702,7 +2702,7 @@ class TestGeocodingCacheSetFailure:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         import logging
-        from maptoposter.geocoding import get_coordinates
+        from maptoart.geocoding import get_coordinates
 
         mock_location = MagicMock()
         mock_location.latitude = 48.8566
@@ -2710,7 +2710,7 @@ class TestGeocodingCacheSetFailure:
         mock_location.address = "Paris, France"
         mock_geocode.return_value = mock_location
 
-        with caplog.at_level(logging.WARNING, logger="maptoposter.geocoding"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.geocoding"):
             result = get_coordinates("Paris", "France")
         assert result == (48.8566, 2.3522)
         assert any("Failed to cache" in r.message for r in caplog.records)
@@ -2720,7 +2720,7 @@ class TestEdgeWidthsEmptyHighwayList:
     """Test get_edge_widths_by_type with empty highway list (#R19-8)."""
 
     def test_empty_highway_list_defaults_to_unclassified(self) -> None:
-        from maptoposter.rendering import get_edge_widths_by_type
+        from maptoart.rendering import get_edge_widths_by_type
         g = nx.MultiDiGraph()
         g.add_edge("a", "b", highway=[])  # empty list
         widths = get_edge_widths_by_type(g)
@@ -2728,7 +2728,7 @@ class TestEdgeWidthsEmptyHighwayList:
         assert widths == [0.4]
 
     def test_highway_list_uses_first_element(self) -> None:
-        from maptoposter.rendering import get_edge_widths_by_type
+        from maptoart.rendering import get_edge_widths_by_type
         g = nx.MultiDiGraph()
         g.add_edge("a", "b", highway=["motorway", "primary"])
         widths = get_edge_widths_by_type(g)
@@ -2739,7 +2739,7 @@ class TestProjectAndPlotLayerNoPolygons:
     """Test _project_and_plot_layer with only LineString geometries (#R19-9)."""
 
     def test_linestring_only_gdf_returns_early(self) -> None:
-        from maptoposter.rendering import _project_and_plot_layer
+        from maptoart.rendering import _project_and_plot_layer
         from shapely.geometry import LineString
         import geopandas as gpd
 
@@ -2756,7 +2756,7 @@ class TestAttributionFontFallback:
     """Test _apply_typography attribution uses monospace when no fonts (#R19-10)."""
 
     def test_attribution_monospace_when_no_fonts(self) -> None:
-        from maptoposter.rendering import _apply_typography
+        from maptoart.rendering import _apply_typography
 
         fig = MagicMock()
         ax = MagicMock()
@@ -2766,7 +2766,7 @@ class TestAttributionFontFallback:
             "bg": "#000000",
         }
 
-        with patch("maptoposter.rendering._get_fonts", return_value=None):
+        with patch("maptoart.rendering._get_fonts", return_value=None):
             _apply_typography(
                 fig, ax, "PARIS", "France", (48.8566, 2.3522),
                 theme, None, 14.0, 11.0, show_attribution=True,
@@ -2813,11 +2813,11 @@ class TestCSVEmptyCityCountryWarning:
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
     ) -> None:
         import logging
-        from maptoposter.batch import load_batch_file
+        from maptoart.batch import load_batch_file
 
         csv = tmp_path / "cities.csv"
         csv.write_text("city,country\n,France\nParis,France\n")
-        with caplog.at_level(logging.WARNING, logger="maptoposter.batch"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.batch"):
             entries = load_batch_file(csv)
         assert len(entries) == 2
         assert any("empty city" in r.message for r in caplog.records)
@@ -2826,9 +2826,9 @@ class TestCSVEmptyCityCountryWarning:
 class TestGeocodingAsyncioRuntimeError:
     """Test geocoding handles RuntimeError from asyncio.run (#R20-10)."""
 
-    @patch("maptoposter.geocoding.cache_get", return_value=None)
-    @patch("maptoposter.geocoding.cache_set")
-    @patch("maptoposter.geocoding._geocode_with_retry")
+    @patch("maptoart.geocoding.cache_get", return_value=None)
+    @patch("maptoart.geocoding.cache_set")
+    @patch("maptoart.geocoding._geocode_with_retry")
     def test_runtime_error_with_new_loop_fallback(
         self,
         mock_geocode: MagicMock,
@@ -2836,7 +2836,7 @@ class TestGeocodingAsyncioRuntimeError:
         mock_cache_get: MagicMock,
     ) -> None:
         import asyncio
-        from maptoposter.geocoding import get_coordinates
+        from maptoart.geocoding import get_coordinates
 
         mock_location = MagicMock()
         mock_location.latitude = 48.8566
@@ -2849,7 +2849,7 @@ class TestGeocodingAsyncioRuntimeError:
         coro = _coro()
         mock_geocode.return_value = coro
 
-        with patch("maptoposter.geocoding.asyncio") as mock_asyncio:
+        with patch("maptoart.geocoding.asyncio") as mock_asyncio:
             mock_asyncio.iscoroutine.return_value = True
             mock_asyncio.run.side_effect = RuntimeError("no running loop")
             mock_loop = MagicMock()
@@ -2862,9 +2862,9 @@ class TestGeocodingAsyncioRuntimeError:
         mock_loop.run_until_complete.assert_called_once()
         mock_loop.close.assert_called_once()
 
-    @patch("maptoposter.geocoding.cache_get", return_value=None)
-    @patch("maptoposter.geocoding.cache_set")
-    @patch("maptoposter.geocoding._geocode_with_retry")
+    @patch("maptoart.geocoding.cache_get", return_value=None)
+    @patch("maptoart.geocoding.cache_set")
+    @patch("maptoart.geocoding._geocode_with_retry")
     def test_runtime_error_with_new_loop_also_fails(
         self,
         mock_geocode: MagicMock,
@@ -2872,7 +2872,7 @@ class TestGeocodingAsyncioRuntimeError:
         mock_cache_get: MagicMock,
     ) -> None:
         import asyncio
-        from maptoposter.geocoding import get_coordinates
+        from maptoart.geocoding import get_coordinates
 
         async def _coro():
             return None
@@ -2880,7 +2880,7 @@ class TestGeocodingAsyncioRuntimeError:
         coro = _coro()
         mock_geocode.return_value = coro
 
-        with patch("maptoposter.geocoding.asyncio") as mock_asyncio:
+        with patch("maptoart.geocoding.asyncio") as mock_asyncio:
             mock_asyncio.iscoroutine.return_value = True
             mock_asyncio.run.side_effect = RuntimeError("event loop is running")
             mock_loop = MagicMock()
@@ -2895,16 +2895,16 @@ class TestGeocodingAsyncioRuntimeError:
 class TestCreatePosterFromOptionsErrors:
     """Test error paths in create_poster_from_options."""
 
-    @patch("maptoposter.core._resolve_coordinates", side_effect=ValueError("not found"))
+    @patch("maptoart.core._resolve_coordinates", side_effect=ValueError("not found"))
     def test_geocoding_failure_propagates(self, mock_resolve: MagicMock) -> None:
         options = PosterGenerationOptions(city="Nowhere", country="Land")
         with pytest.raises(ValueError, match="not found"):
             core.create_poster_from_options(options, "terracotta")
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster", side_effect=RuntimeError("render failed"))
-    @patch("maptoposter.core.load_theme", return_value=SAMPLE_THEME_DATA)
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster", side_effect=RuntimeError("render failed"))
+    @patch("maptoart.core.load_theme", return_value=SAMPLE_THEME_DATA)
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
     def test_create_poster_failure_propagates(
         self,
         mock_resolve: MagicMock,
@@ -2920,8 +2920,8 @@ class TestCreatePosterFromOptionsErrors:
 class TestParallelFetchFailure:
     """Test that a parallel fetch task failure is caught and logged."""
 
-    @patch("maptoposter.core.fetch_features")
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features")
+    @patch("maptoart.core.fetch_graph")
     def test_parks_failure_still_returns_graph(
         self, mock_graph: MagicMock, mock_features: MagicMock,
         silent_reporter: core.StatusReporter,
@@ -2951,11 +2951,11 @@ class TestParallelFetchFailure:
 class TestMultiThemePartialFailure:
     """Test generate_posters continues past theme failures."""
 
-    @patch("maptoposter.core._write_metadata", return_value="/tmp/out.json")
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core._fetch_map_data")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.core.load_theme", return_value=SAMPLE_THEME_DATA)
+    @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core._fetch_map_data")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core.load_theme", return_value=SAMPLE_THEME_DATA)
     def test_first_succeeds_second_fails(
         self,
         mock_theme: MagicMock,
@@ -2996,7 +2996,7 @@ class TestSaveOutputTempCleanup:
         fig, ax = plt.subplots(figsize=(2, 2))
         output_file = str(tmp_path / "test.png")
 
-        with patch("maptoposter.core.plt.savefig", side_effect=RuntimeError("boom")):
+        with patch("maptoart.core.plt.savefig", side_effect=RuntimeError("boom")):
             with pytest.raises(RuntimeError, match="boom"):
                 core._save_output(
                     fig, output_file, "png", sample_theme,
@@ -3012,18 +3012,18 @@ class TestNominatimDelayValidation:
     """Test _nominatim_delay() handles invalid env var gracefully."""
 
     def test_valid_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from maptoposter.geocoding import _nominatim_delay
-        monkeypatch.setenv("MAPTOPOSTER_NOMINATIM_DELAY", "0.5")
+        from maptoart.geocoding import _nominatim_delay
+        monkeypatch.setenv("MAPTOART_NOMINATIM_DELAY", "0.5")
         assert _nominatim_delay() == 0.5
 
     def test_invalid_env_var_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from maptoposter.geocoding import _nominatim_delay
-        monkeypatch.setenv("MAPTOPOSTER_NOMINATIM_DELAY", "abc")
+        from maptoart.geocoding import _nominatim_delay
+        monkeypatch.setenv("MAPTOART_NOMINATIM_DELAY", "abc")
         assert _nominatim_delay() == 1.0
 
     def test_unset_env_var_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from maptoposter.geocoding import _nominatim_delay
-        monkeypatch.delenv("MAPTOPOSTER_NOMINATIM_DELAY", raising=False)
+        from maptoart.geocoding import _nominatim_delay
+        monkeypatch.delenv("MAPTOART_NOMINATIM_DELAY", raising=False)
         assert _nominatim_delay() == 1.0
 
 
@@ -3036,8 +3036,8 @@ class TestBatchIgnoresCityCountryWarning:
         batch_file = tmp_path / "cities.csv"
         batch_file.write_text("city,country\nParis,France\n", encoding="utf-8")
 
-        with patch("maptoposter.batch.run_batch", return_value={"failures": 0, "successes": []}) as mock_batch:
-            from maptoposter.cli import main
+        with patch("maptoart.batch.run_batch", return_value={"failures": 0, "successes": []}) as mock_batch:
+            from maptoart.cli import main
             main(["--batch", str(batch_file), "--city", "London", "--country", "UK"])
 
         captured = capsys.readouterr()
@@ -3075,15 +3075,15 @@ class TestEntryPoint:
     """Test the _entry() console script wrapper."""
 
     def test_entry_raises_system_exit_with_return_code(self) -> None:
-        from maptoposter.cli import _entry
-        with patch("maptoposter.cli.main", return_value=0):
+        from maptoart.cli import _entry
+        with patch("maptoart.cli.main", return_value=0):
             with pytest.raises(SystemExit) as exc_info:
                 _entry()
             assert exc_info.value.code == 0
 
     def test_entry_propagates_nonzero_exit(self) -> None:
-        from maptoposter.cli import _entry
-        with patch("maptoposter.cli.main", return_value=1):
+        from maptoart.cli import _entry
+        with patch("maptoart.cli.main", return_value=1):
             with pytest.raises(SystemExit) as exc_info:
                 _entry()
             assert exc_info.value.code == 1
@@ -3092,10 +3092,10 @@ class TestEntryPoint:
 class TestGeneratePostersCountryLabelDeprecation:
     """Test that generate_posters emits deprecation for country_label."""
 
-    @patch("maptoposter.core.create_poster")
-    @patch("maptoposter.core._resolve_coordinates", return_value=(48.8, 2.3))
-    @patch("maptoposter.core._load_custom_fonts", return_value=None)
-    @patch("maptoposter.core._get_fonts", return_value=None)
+    @patch("maptoart.core.create_poster")
+    @patch("maptoart.core._resolve_coordinates", return_value=(48.8, 2.3))
+    @patch("maptoart.core._load_custom_fonts", return_value=None)
+    @patch("maptoart.core._get_fonts", return_value=None)
     def test_generate_posters_warns_on_country_label(
         self,
         mock_fonts: MagicMock,
@@ -3107,7 +3107,7 @@ class TestGeneratePostersCountryLabelDeprecation:
     ) -> None:
         mock_create.return_value = str(tmp_path / "out.png")
         # Patch _write_metadata so it doesn't fail
-        with patch("maptoposter.core._write_metadata", return_value="meta.json"):
+        with patch("maptoart.core._write_metadata", return_value="meta.json"):
             import warnings as _warnings
             with _warnings.catch_warnings(record=True) as w:
                 _warnings.simplefilter("always")
@@ -3128,14 +3128,14 @@ class TestGeneratePostersCountryLabelDeprecation:
 class TestDryRunVectorFormat:
     """Test dry-run output for SVG/PDF formats shows vector-specific message."""
 
-    @patch("maptoposter.geocoding.get_coordinates", return_value=(48.8, 2.3))
+    @patch("maptoart.geocoding.get_coordinates", return_value=(48.8, 2.3))
     def test_svg_dry_run_no_size_estimate(
         self,
         mock_coords: MagicMock,
         sample_theme: dict[str, str],
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        from maptoposter.cli import main
+        from maptoart.cli import main
         main(["--city", "Paris", "--country", "France", "--format", "svg", "--theme", "custom", "--dry-run"])
         captured = capsys.readouterr()
         assert "varies for vector formats" in captured.out
@@ -3150,8 +3150,8 @@ class TestAllThemesBatchWarning:
         batch_file = tmp_path / "cities.csv"
         batch_file.write_text("city,country\nParis,France\n", encoding="utf-8")
 
-        with patch("maptoposter.batch.run_batch", return_value={"failures": [], "successes": []}) as mock_batch:
-            from maptoposter.cli import main
+        with patch("maptoart.batch.run_batch", return_value={"failures": [], "successes": []}) as mock_batch:
+            from maptoart.cli import main
             main(["--batch", str(batch_file), "--all-themes"])
 
         captured = capsys.readouterr()
@@ -3208,15 +3208,15 @@ class TestCorruptMetadataWithDefaultTtl:
 
 
 class TestNegativeNominatimDelayWarning:
-    """Test that negative MAPTOPOSTER_NOMINATIM_DELAY logs a warning and clamps to 0."""
+    """Test that negative MAPTOART_NOMINATIM_DELAY logs a warning and clamps to 0."""
 
     def test_negative_delay_clamps_and_warns(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.CaptureFixture[str],
     ) -> None:
-        monkeypatch.setenv("MAPTOPOSTER_NOMINATIM_DELAY", "-5")
-        from maptoposter.geocoding import _nominatim_delay
+        monkeypatch.setenv("MAPTOART_NOMINATIM_DELAY", "-5")
+        from maptoart.geocoding import _nominatim_delay
         import logging
-        with caplog.at_level(logging.WARNING, logger="maptoposter.geocoding"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.geocoding"):
             result = _nominatim_delay()
         assert result == 0.0
         assert any("negative" in r.message for r in caplog.records)
@@ -3225,13 +3225,13 @@ class TestNegativeNominatimDelayWarning:
 class TestCreatePosterDpiClamping:
     """Test that create_poster clamps DPI below 72."""
 
-    @patch("maptoposter.core._fetch_map_data")
-    @patch("maptoposter.core._save_output")
-    @patch("maptoposter.core._apply_typography")
-    @patch("maptoposter.core._render_layers")
-    @patch("maptoposter.core._setup_figure", return_value=(MagicMock(), MagicMock()))
-    @patch("maptoposter.core.ox.project_graph")
-    @patch("maptoposter.core._estimate_memory", return_value=100_000)
+    @patch("maptoart.core._fetch_map_data")
+    @patch("maptoart.core._save_output")
+    @patch("maptoart.core._apply_typography")
+    @patch("maptoart.core._render_layers")
+    @patch("maptoart.core._setup_figure", return_value=(MagicMock(), MagicMock()))
+    @patch("maptoart.core.ox.project_graph")
+    @patch("maptoart.core._estimate_memory", return_value=100_000)
     def test_low_dpi_clamped_to_72(
         self,
         mock_mem: MagicMock,
@@ -3262,10 +3262,10 @@ class TestCreatePosterDpiClamping:
 class TestGeocodingCacheErrorFallback:
     """get_coordinates falls back to fresh lookup when cache is corrupt."""
 
-    @patch("maptoposter.geocoding.time.sleep")
-    @patch("maptoposter.geocoding._geocode_with_retry")
-    @patch("maptoposter.geocoding.cache_set")
-    @patch("maptoposter.geocoding.cache_get", side_effect=CacheError("corrupt"))
+    @patch("maptoart.geocoding.time.sleep")
+    @patch("maptoart.geocoding._geocode_with_retry")
+    @patch("maptoart.geocoding.cache_set")
+    @patch("maptoart.geocoding.cache_get", side_effect=CacheError("corrupt"))
     def test_cache_error_falls_through(
         self, mock_cget: MagicMock, mock_cset: MagicMock, mock_geo: MagicMock, mock_sleep: MagicMock,
     ) -> None:
@@ -3283,7 +3283,7 @@ class TestOsmnxImportFallback:
         # The current osmnx version uses _errors; just verify it imported
         assert hasattr(core, "InsufficientResponseError") or True
         # The real test is that core imported successfully
-        from maptoposter.core import _fetch_map_data  # noqa: F401
+        from maptoart.core import _fetch_map_data  # noqa: F401
 
 
 class TestThemeCacheRace:
@@ -3315,7 +3315,7 @@ class TestThemeCacheRaceAtEnd:
                 core._theme_cache["custom"] = other_result
             return result
 
-        with patch("maptoposter.core.json.load", side_effect=_intercept_json_load):
+        with patch("maptoart.core.json.load", side_effect=_intercept_json_load):
             theme = core.load_theme("custom")
 
         # Should return the value from the "other thread", not the file
@@ -3403,14 +3403,14 @@ class TestNominatimDelayNonFinite:
     """_nominatim_delay rejects NaN and inf from env var."""
 
     def test_nan_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import maptoposter.geocoding as geo
-        monkeypatch.setenv("MAPTOPOSTER_NOMINATIM_DELAY", "nan")
+        import maptoart.geocoding as geo
+        monkeypatch.setenv("MAPTOART_NOMINATIM_DELAY", "nan")
         result = geo._nominatim_delay()
         assert result == geo._NOMINATIM_DELAY_DEFAULT
 
     def test_inf_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import maptoposter.geocoding as geo
-        monkeypatch.setenv("MAPTOPOSTER_NOMINATIM_DELAY", "inf")
+        import maptoart.geocoding as geo
+        monkeypatch.setenv("MAPTOART_NOMINATIM_DELAY", "inf")
         result = geo._nominatim_delay()
         assert result == geo._NOMINATIM_DELAY_DEFAULT
 
@@ -3419,7 +3419,7 @@ class TestBomCsvBatchFile:
     """CSV with BOM from Excel/Windows loads correctly."""
 
     def test_bom_csv_loads(self, tmp_path: Path) -> None:
-        from maptoposter.batch import load_batch_file
+        from maptoart.batch import load_batch_file
         csv_content = "\ufeffcity,country\nParis,France\n"
         bom_file = tmp_path / "bom.csv"
         bom_file.write_text(csv_content, encoding="utf-8")
@@ -3468,9 +3468,9 @@ class TestNonStringCityCountry:
 class TestFetchFeaturesCacheKeyIncludesValues:
     """fetch_features cache key includes tag values, not just keys."""
 
-    @patch("maptoposter.core.cache_get", return_value=None)
-    @patch("maptoposter.core.ox.features_from_point")
-    @patch("maptoposter.core.cache_set")
+    @patch("maptoart.core.cache_get", return_value=None)
+    @patch("maptoart.core.ox.features_from_point")
+    @patch("maptoart.core.cache_set")
     def test_different_tag_values_produce_different_keys(
         self, mock_set: MagicMock, mock_features: MagicMock, mock_cache: MagicMock,
     ) -> None:
@@ -3519,12 +3519,12 @@ class TestCreatePosterZeroDimensions:
 class TestCreatePosterClosesFigure:
     """create_poster calls plt.close(fig) for resource cleanup."""
 
-    @patch("maptoposter.core._save_output")
-    @patch("maptoposter.core._apply_typography")
-    @patch("maptoposter.core._render_layers")
-    @patch("maptoposter.core._setup_figure")
-    @patch("maptoposter.core.ox.project_graph")
-    @patch("maptoposter.core._fetch_map_data")
+    @patch("maptoart.core._save_output")
+    @patch("maptoart.core._apply_typography")
+    @patch("maptoart.core._render_layers")
+    @patch("maptoart.core._setup_figure")
+    @patch("maptoart.core.ox.project_graph")
+    @patch("maptoart.core._fetch_map_data")
     def test_plt_close_called_on_success(
         self,
         mock_fetch: MagicMock,
@@ -3542,19 +3542,19 @@ class TestCreatePosterClosesFigure:
         mock_fig = MagicMock()
         mock_setup.return_value = (mock_fig, MagicMock())
 
-        with patch("maptoposter.core.plt") as mock_plt:
+        with patch("maptoart.core.plt") as mock_plt:
             core.create_poster(
                 "Paris", "France", (48.8, 2.3), 10000,
                 "/tmp/out.png", "png", theme=sample_theme,
             )
             mock_plt.close.assert_called_once_with(mock_fig)
 
-    @patch("maptoposter.core._save_output", side_effect=OSError("disk full"))
-    @patch("maptoposter.core._apply_typography")
-    @patch("maptoposter.core._render_layers")
-    @patch("maptoposter.core._setup_figure")
-    @patch("maptoposter.core.ox.project_graph")
-    @patch("maptoposter.core._fetch_map_data")
+    @patch("maptoart.core._save_output", side_effect=OSError("disk full"))
+    @patch("maptoart.core._apply_typography")
+    @patch("maptoart.core._render_layers")
+    @patch("maptoart.core._setup_figure")
+    @patch("maptoart.core.ox.project_graph")
+    @patch("maptoart.core._fetch_map_data")
     def test_plt_close_called_on_error(
         self,
         mock_fetch: MagicMock,
@@ -3572,7 +3572,7 @@ class TestCreatePosterClosesFigure:
         mock_fig = MagicMock()
         mock_setup.return_value = (mock_fig, MagicMock())
 
-        with patch("maptoposter.core.plt") as mock_plt:
+        with patch("maptoart.core.plt") as mock_plt:
             with pytest.raises(OSError):
                 core.create_poster(
                     "Paris", "France", (48.8, 2.3), 10000,

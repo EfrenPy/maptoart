@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import maptoposter.core as core
+import maptoart.core as core
 
 from conftest import build_synthetic_graph
 
@@ -16,9 +16,9 @@ from conftest import build_synthetic_graph
 class TestIntegration:
     """Integration tests that exercise real matplotlib rendering."""
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
-    @patch("maptoposter.core.get_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
+    @patch("maptoart.core.get_coordinates", return_value=(48.8566, 2.3522))
     def test_create_poster_png_output(
         self,
         mock_coords: MagicMock,
@@ -46,8 +46,8 @@ class TestIntegration:
         header = result.read_bytes()[:4]
         assert header == b"\x89PNG", f"Invalid PNG header: {header!r}"
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
     def test_create_poster_svg_output(
         self,
         mock_graph: MagicMock,
@@ -73,8 +73,8 @@ class TestIntegration:
         content = result.read_text(encoding="utf-8")
         assert "<?xml" in content or "<svg" in content, "Not a valid SVG file"
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
     def test_create_poster_pdf_output(
         self,
         mock_graph: MagicMock,
@@ -100,8 +100,8 @@ class TestIntegration:
         header = result.read_bytes()[:5]
         assert header == b"%PDF-", f"Invalid PDF header: {header!r}"
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
     def test_vector_format_dpi_capped(
         self,
         mock_graph: MagicMock,
@@ -137,6 +137,6 @@ class TestPackageTyping:
     """Verify py.typed marker is included in installed package."""
 
     def test_py_typed_marker_exists(self) -> None:
-        import maptoposter
-        marker = Path(maptoposter.__file__).parent / "py.typed"
+        import maptoart
+        marker = Path(maptoart.__file__).parent / "py.typed"
         assert marker.exists(), "py.typed marker missing from installed package"

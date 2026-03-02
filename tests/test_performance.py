@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import maptoposter.core as core
+import maptoart.core as core
 
 from conftest import build_synthetic_graph
 
@@ -17,8 +17,8 @@ from conftest import build_synthetic_graph
 class TestRenderPerformance:
     """Performance regression tests."""
 
-    @patch("maptoposter.core.fetch_features", return_value=None)
-    @patch("maptoposter.core.fetch_graph")
+    @patch("maptoart.core.fetch_features", return_value=None)
+    @patch("maptoart.core.fetch_graph")
     def test_render_completes_within_budget(
         self,
         mock_graph: MagicMock,

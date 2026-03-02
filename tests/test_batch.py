@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from maptoposter.batch import (
+from maptoart.batch import (
     _is_transient,
     _pre_geocode_batch,
     _process_city_worker,
@@ -102,7 +102,7 @@ class TestLoadBatchJSON:
 class TestRunBatch:
     """Tests for run_batch execution."""
 
-    @patch("maptoposter.batch.generate_posters", return_value=["/tmp/out.png"])
+    @patch("maptoart.batch.generate_posters", return_value=["/tmp/out.png"])
     def test_all_succeed(self, mock_gen: MagicMock, tmp_path: Path) -> None:
         csv = tmp_path / "cities.csv"
         csv.write_text("city,country\nParis,France\nTokyo,Japan\n")
@@ -111,7 +111,7 @@ class TestRunBatch:
         assert len(result["successes"]) == 2
         assert len(result["failures"]) == 0
 
-    @patch("maptoposter.batch.generate_posters")
+    @patch("maptoart.batch.generate_posters")
     def test_partial_failure(self, mock_gen: MagicMock, tmp_path: Path) -> None:
         mock_gen.side_effect = [
             ["/tmp/paris.png"],
@@ -124,7 +124,7 @@ class TestRunBatch:
         assert len(result["successes"]) == 1
         assert len(result["failures"]) == 1
 
-    @patch("maptoposter.batch.generate_posters", return_value=["/tmp/out.png"])
+    @patch("maptoart.batch.generate_posters", return_value=["/tmp/out.png"])
     def test_global_overrides_applied(self, mock_gen: MagicMock, tmp_path: Path) -> None:
         csv = tmp_path / "cities.csv"
         csv.write_text("city,country\nParis,France\n")
@@ -163,8 +163,8 @@ class TestIsTransient:
 class TestBatchRetry:
     """Tests for batch retry on transient failures."""
 
-    @patch("maptoposter.batch.time.sleep")
-    @patch("maptoposter.batch.generate_posters")
+    @patch("maptoart.batch.time.sleep")
+    @patch("maptoart.batch.generate_posters")
     def test_retries_on_transient_then_succeeds(
         self, mock_gen: MagicMock, mock_sleep: MagicMock, tmp_path: Path,
     ) -> None:
@@ -179,8 +179,8 @@ class TestBatchRetry:
         assert len(result["failures"]) == 0
         mock_sleep.assert_called_once_with(2)
 
-    @patch("maptoposter.batch.time.sleep")
-    @patch("maptoposter.batch.generate_posters")
+    @patch("maptoart.batch.time.sleep")
+    @patch("maptoart.batch.generate_posters")
     def test_no_retry_on_permanent_error(
         self, mock_gen: MagicMock, mock_sleep: MagicMock, tmp_path: Path,
     ) -> None:
@@ -191,8 +191,8 @@ class TestBatchRetry:
         assert len(result["failures"]) == 1
         mock_sleep.assert_not_called()
 
-    @patch("maptoposter.batch.time.sleep")
-    @patch("maptoposter.batch.generate_posters")
+    @patch("maptoart.batch.time.sleep")
+    @patch("maptoart.batch.generate_posters")
     def test_exhausts_retries(
         self, mock_gen: MagicMock, mock_sleep: MagicMock, tmp_path: Path,
     ) -> None:
@@ -210,7 +210,7 @@ class TestBatchRetry:
 class TestBatchDryRun:
     """Tests for batch --dry-run."""
 
-    @patch("maptoposter.batch.generate_posters")
+    @patch("maptoart.batch.generate_posters")
     def test_dry_run_skips_generation(self, mock_gen: MagicMock, tmp_path: Path) -> None:
         csv = tmp_path / "cities.csv"
         csv.write_text("city,country\nParis,France\nTokyo,Japan\n")
@@ -259,7 +259,7 @@ class TestBatchEdgeCases:
 class TestBatchEmptyCityCountry:
     """Tests for empty city/country early validation in run_batch (#R11-6)."""
 
-    @patch("maptoposter.batch.generate_posters", return_value=["/tmp/out.png"])
+    @patch("maptoart.batch.generate_posters", return_value=["/tmp/out.png"])
     def test_empty_city_skipped(self, mock_gen: MagicMock, tmp_path: Path) -> None:
         jf = tmp_path / "cities.json"
         jf.write_text(json.dumps([
@@ -273,7 +273,7 @@ class TestBatchEmptyCityCountry:
         # Only the valid entry was generated
         assert len(result["successes"]) == 1
 
-    @patch("maptoposter.batch.generate_posters", return_value=["/tmp/out.png"])
+    @patch("maptoart.batch.generate_posters", return_value=["/tmp/out.png"])
     def test_whitespace_only_country_skipped(self, mock_gen: MagicMock, tmp_path: Path) -> None:
         jf = tmp_path / "cities.json"
         jf.write_text(json.dumps([
@@ -313,7 +313,7 @@ class TestBatchMalformedJson:
 class TestBatchOuterExceptionHandler:
     """Test batch outer except catches PosterGenerationOptions errors (#R18-5)."""
 
-    @patch("maptoposter.batch.generate_posters")
+    @patch("maptoart.batch.generate_posters")
     def test_invalid_options_caught_as_failure(self, mock_gen: MagicMock, tmp_path: Path) -> None:
         # Use an invalid distance value that will cause PosterGenerationOptions to raise ValueError
         jf = tmp_path / "cities.json"
@@ -329,7 +329,7 @@ class TestBatchOuterExceptionHandler:
 class TestBatchDryRunMessage:
     """Batch dry-run completion message includes previewed count."""
 
-    @patch("maptoposter.batch.generate_posters")
+    @patch("maptoart.batch.generate_posters")
     def test_dry_run_message_shows_previewed_count(
         self, mock_gen: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -341,7 +341,7 @@ class TestBatchDryRunMessage:
         assert "2 previewed" in captured.out
         mock_gen.assert_not_called()
 
-    @patch("maptoposter.batch.generate_posters", return_value=["/tmp/out.png"])
+    @patch("maptoart.batch.generate_posters", return_value=["/tmp/out.png"])
     def test_non_dry_run_message_shows_succeeded(
         self, mock_gen: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -355,7 +355,7 @@ class TestBatchDryRunMessage:
 class TestPreGeocodeBatch:
     """Tests for Phase 3: _pre_geocode_batch."""
 
-    @patch("maptoposter.batch.get_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.batch.get_coordinates", return_value=(48.8566, 2.3522))
     def test_geocodes_entries_without_coords(self, mock_geo: MagicMock) -> None:
         entries = [
             {"city": "Paris", "country": "France"},
@@ -366,7 +366,7 @@ class TestPreGeocodeBatch:
         assert result[0] == (48.8566, 2.3522)
         assert mock_geo.call_count == 2
 
-    @patch("maptoposter.batch.get_coordinates")
+    @patch("maptoart.batch.get_coordinates")
     def test_skips_entries_with_existing_coords(self, mock_geo: MagicMock) -> None:
         entries = [
             {"city": "Paris", "country": "France", "latitude": 48.0, "longitude": 2.0},
@@ -375,7 +375,7 @@ class TestPreGeocodeBatch:
         assert result[0] == (48.0, 2.0)
         mock_geo.assert_not_called()
 
-    @patch("maptoposter.batch.get_coordinates", side_effect=ValueError("not found"))
+    @patch("maptoart.batch.get_coordinates", side_effect=ValueError("not found"))
     def test_handles_geocode_failure(self, mock_geo: MagicMock) -> None:
         entries = [{"city": "Nowhere", "country": "Land"}]
         result = _pre_geocode_batch(entries)
@@ -390,8 +390,8 @@ class TestPreGeocodeBatch:
 class TestPreGeocodeIntegration:
     """Test that run_batch injects pre-geocoded coordinates."""
 
-    @patch("maptoposter.batch.generate_posters", return_value=["/tmp/out.png"])
-    @patch("maptoposter.batch.get_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.batch.generate_posters", return_value=["/tmp/out.png"])
+    @patch("maptoart.batch.get_coordinates", return_value=(48.8566, 2.3522))
     def test_coords_injected_into_entries(
         self, mock_geo: MagicMock, mock_gen: MagicMock, tmp_path: Path,
     ) -> None:
@@ -421,7 +421,7 @@ class _FakeFuture:
 class TestParallelBatch:
     """Tests for Phase 4: parallel batch processing."""
 
-    @patch("maptoposter.batch.get_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.batch.get_coordinates", return_value=(48.8566, 2.3522))
     def test_parallel_dispatches_workers(
         self, mock_geo: MagicMock, tmp_path: Path,
     ) -> None:
@@ -437,8 +437,8 @@ class TestParallelBatch:
         def fake_as_completed(future_dict):
             return list(future_dict.keys())
 
-        with patch("maptoposter.batch.ProcessPoolExecutor", return_value=mock_executor), \
-             patch("maptoposter.batch.as_completed", side_effect=fake_as_completed):
+        with patch("maptoart.batch.ProcessPoolExecutor", return_value=mock_executor), \
+             patch("maptoart.batch.as_completed", side_effect=fake_as_completed):
             csv = tmp_path / "cities.csv"
             csv.write_text("city,country\nParis,France\nTokyo,Japan\n")
             result = run_batch(csv, parallel=True, max_workers=2)
@@ -446,7 +446,7 @@ class TestParallelBatch:
         assert len(result["successes"]) == 2
         assert mock_executor.submit.call_count == 2
 
-    @patch("maptoposter.batch.get_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.batch.get_coordinates", return_value=(48.8566, 2.3522))
     def test_parallel_handles_worker_failure(
         self, mock_geo: MagicMock, tmp_path: Path,
     ) -> None:
@@ -461,8 +461,8 @@ class TestParallelBatch:
         def fake_as_completed(future_dict):
             return list(future_dict.keys())
 
-        with patch("maptoposter.batch.ProcessPoolExecutor", return_value=mock_executor), \
-             patch("maptoposter.batch.as_completed", side_effect=fake_as_completed):
+        with patch("maptoart.batch.ProcessPoolExecutor", return_value=mock_executor), \
+             patch("maptoart.batch.as_completed", side_effect=fake_as_completed):
             csv = tmp_path / "cities.csv"
             csv.write_text("city,country\nParis,France\nTokyo,Japan\n")
             result = run_batch(csv, parallel=True, max_workers=2)
@@ -470,8 +470,8 @@ class TestParallelBatch:
         assert len(result["successes"]) == 1
         assert len(result["failures"]) == 1
 
-    @patch("maptoposter.batch.generate_posters", return_value=["/tmp/out.png"])
-    @patch("maptoposter.batch.get_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.batch.generate_posters", return_value=["/tmp/out.png"])
+    @patch("maptoart.batch.get_coordinates", return_value=(48.8566, 2.3522))
     def test_parallel_single_entry_falls_back_to_sequential(
         self, mock_geo: MagicMock, mock_gen: MagicMock, tmp_path: Path,
     ) -> None:
@@ -482,7 +482,7 @@ class TestParallelBatch:
         assert len(result["successes"]) == 1
         mock_gen.assert_called_once()
 
-    @patch("maptoposter.batch.get_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.batch.get_coordinates", return_value=(48.8566, 2.3522))
     def test_parallel_handles_unexpected_exception(
         self, mock_geo: MagicMock, tmp_path: Path,
     ) -> None:
@@ -498,8 +498,8 @@ class TestParallelBatch:
         def fake_as_completed(future_dict: dict) -> list:
             return list(future_dict.keys())
 
-        with patch("maptoposter.batch.ProcessPoolExecutor", return_value=mock_executor), \
-             patch("maptoposter.batch.as_completed", side_effect=fake_as_completed):
+        with patch("maptoart.batch.ProcessPoolExecutor", return_value=mock_executor), \
+             patch("maptoart.batch.as_completed", side_effect=fake_as_completed):
             csv = tmp_path / "cities.csv"
             csv.write_text("city,country\nParis,France\nTokyo,Japan\n")
             result = run_batch(csv, parallel=True, max_workers=2)
@@ -511,7 +511,7 @@ class TestParallelBatch:
 class TestProcessCityWorker:
     """Tests for _process_city_worker function."""
 
-    @patch("maptoposter.batch.generate_posters", return_value=["/tmp/poster.png"])
+    @patch("maptoart.batch.generate_posters", return_value=["/tmp/poster.png"])
     def test_successful_generation(self, mock_gen: MagicMock) -> None:
         entry = {"city": "Paris", "country": "France"}
         outputs, failure = _process_city_worker(entry, {})
@@ -526,7 +526,7 @@ class TestProcessCityWorker:
         assert failure is not None
         assert "error" in failure
 
-    @patch("maptoposter.batch.generate_posters", side_effect=RuntimeError("OSM error"))
+    @patch("maptoart.batch.generate_posters", side_effect=RuntimeError("OSM error"))
     def test_generation_error_returns_failure(self, mock_gen: MagicMock) -> None:
         entry = {"city": "Paris", "country": "France"}
         outputs, failure = _process_city_worker(entry, {})
@@ -534,8 +534,8 @@ class TestProcessCityWorker:
         assert failure is not None
         assert "OSM error" in failure["error"]
 
-    @patch("maptoposter.batch.time.sleep")
-    @patch("maptoposter.batch.generate_posters")
+    @patch("maptoart.batch.time.sleep")
+    @patch("maptoart.batch.generate_posters")
     def test_transient_error_retries(self, mock_gen: MagicMock, mock_sleep: MagicMock) -> None:
         """Verify transient errors trigger retry logic."""
         mock_gen.side_effect = [

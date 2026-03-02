@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from maptoposter import font_management
+from maptoart import font_management
 
 
 class TestLoadFonts:
@@ -50,7 +50,7 @@ class TestLoadFonts:
 
         monkeypatch.setattr(font_management, "FONTS_DIR", fonts_dir)
 
-        with caplog.at_level(logging.WARNING, logger="maptoposter.font_management"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.font_management"):
             font_management.load_fonts()
 
         assert any("Font not found" in record.message for record in caplog.records)
@@ -59,28 +59,28 @@ class TestLoadFonts:
 class TestDownloadGoogleFontErrorCategories:
     """Tests for error categorization in download_google_font()."""
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_connection_error_message(
         self, mock_get: MagicMock, caplog: pytest.LogCaptureFixture,
     ) -> None:
         mock_get.side_effect = requests.ConnectionError("Connection refused")
-        with caplog.at_level(logging.WARNING, logger="maptoposter.font_management"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.font_management"):
             result = font_management.download_google_font("FakeFont")
         assert result is None
         assert any("Network error" in r.message for r in caplog.records)
         assert any("Check your internet connection" in r.message for r in caplog.records)
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_timeout_error_message(
         self, mock_get: MagicMock, caplog: pytest.LogCaptureFixture,
     ) -> None:
         mock_get.side_effect = requests.Timeout("Request timed out")
-        with caplog.at_level(logging.WARNING, logger="maptoposter.font_management"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.font_management"):
             result = font_management.download_google_font("FakeFont")
         assert result is None
         assert any("Network error" in r.message for r in caplog.records)
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_404_error_message(
         self, mock_get: MagicMock, caplog: pytest.LogCaptureFixture,
     ) -> None:
@@ -88,7 +88,7 @@ class TestDownloadGoogleFontErrorCategories:
         mock_response.status_code = 404
         mock_response.raise_for_status.side_effect = requests.HTTPError(response=mock_response)
         mock_get.return_value = mock_response
-        with caplog.at_level(logging.WARNING, logger="maptoposter.font_management"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.font_management"):
             result = font_management.download_google_font("NonExistentFont")
         assert result is None
         assert any("not found on Google Fonts" in r.message for r in caplog.records)
@@ -97,7 +97,7 @@ class TestDownloadGoogleFontErrorCategories:
 class TestDownloadGoogleFontDownloadPath:
     """Tests for download_google_font() full download path."""
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_successful_download(
         self,
         mock_get: MagicMock,
@@ -140,7 +140,7 @@ class TestDownloadGoogleFontDownloadPath:
         # CSS + 3 font downloads = 4 calls
         assert mock_get.call_count == 4
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_missing_weight_uses_closest(
         self,
         mock_get: MagicMock,
@@ -172,7 +172,7 @@ class TestDownloadGoogleFontDownloadPath:
         assert result is not None
         assert "regular" in result
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_individual_font_download_failure(
         self,
         mock_get: MagicMock,
@@ -203,7 +203,7 @@ class TestDownloadGoogleFontDownloadPath:
         result = font_management.download_google_font("TestFont")
         assert result is None  # No fonts successfully downloaded
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_no_font_face_blocks(
         self,
         mock_get: MagicMock,
@@ -227,14 +227,14 @@ class TestDownloadGoogleFontDownloadPath:
 class TestDownloadGoogleFont:
     """Tests for download_google_font() with mocked HTTP."""
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_network_error_returns_none(self, mock_get: MagicMock) -> None:
         mock_get.side_effect = requests.ConnectionError("Connection refused")
         result = font_management.download_google_font("FakeFont")
         assert result is None
 
     @patch("tenacity.nap.time.sleep")
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_retry_on_connection_error(
         self,
         mock_get: MagicMock,
@@ -275,7 +275,7 @@ class TestDownloadGoogleFont:
         assert "regular" in result
 
     @patch("tenacity.nap.time.sleep")
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_retry_exhaustion_skips_weight(
         self,
         mock_get: MagicMock,
@@ -309,7 +309,7 @@ class TestDownloadGoogleFont:
         result = font_management.download_google_font("TestFont", weights=[400])
         assert result is None  # No weights downloaded successfully
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_caching_skips_redownload(
         self,
         mock_get: MagicMock,
@@ -350,8 +350,8 @@ class TestDownloadGoogleFont:
         # (the CSS fetch is also skipped when all weights are found locally)
         assert mock_get.call_count == 0
 
-    @patch("maptoposter.font_management.requests.get")
-    @patch("maptoposter.font_management._download_font_file")
+    @patch("maptoart.font_management.requests.get")
+    @patch("maptoart.font_management._download_font_file")
     def test_partial_cache_fetches_css_and_downloads_missing(
         self,
         mock_download: MagicMock,
@@ -456,7 +456,7 @@ class TestDownloadFontFileRetryableHTTP:
     """Test _download_font_file raises _RetryableHTTPError on 500 (#R17-7)."""
 
     @patch("tenacity.nap.time.sleep")
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_http_500_raises_retryable(self, mock_get: MagicMock, mock_sleep: MagicMock) -> None:
         resp = MagicMock()
         resp.status_code = 500
@@ -468,8 +468,8 @@ class TestDownloadFontFileRetryableHTTP:
 class TestFontFileWriteOSError:
     """Test font file write OSError is caught per-weight (#R17-8)."""
 
-    @patch("maptoposter.font_management._download_font_file", return_value=b"fontdata")
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management._download_font_file", return_value=b"fontdata")
+    @patch("maptoart.font_management.requests.get")
     def test_write_oserror_skips_weight(
         self,
         mock_get: MagicMock,
@@ -501,7 +501,7 @@ class TestFontFileWriteOSError:
 class TestCSSBlockWithoutFontWeight:
     """Test CSS @font-face block without font-weight is skipped (#R18-9)."""
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_block_without_weight_skipped(
         self,
         mock_get: MagicMock,
@@ -540,7 +540,7 @@ class TestCSSBlockWithoutFontWeight:
 class TestUntrustedFontDomainRejected:
     """Test that font URLs from untrusted domains are skipped (#R35)."""
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_untrusted_domain_skipped(
         self,
         mock_get: MagicMock,
@@ -571,7 +571,7 @@ class TestUntrustedFontDomainRejected:
 class TestLoadFontsGoogleFontFallback:
     """Test load_fonts falls back to Roboto when Google Font fails (#R18-10)."""
 
-    @patch("maptoposter.font_management.download_google_font", return_value=None)
+    @patch("maptoart.font_management.download_google_font", return_value=None)
     def test_custom_font_failure_falls_back_to_roboto(
         self,
         mock_download: MagicMock,
@@ -592,7 +592,7 @@ class TestLoadFontsGoogleFontFallback:
         # Verify the fallback is Roboto paths
         assert "Roboto-Bold.ttf" in result["bold"]
 
-    @patch("maptoposter.font_management.download_google_font", return_value=None)
+    @patch("maptoart.font_management.download_google_font", return_value=None)
     def test_custom_font_failure_and_no_roboto(
         self,
         mock_download: MagicMock,
@@ -605,7 +605,7 @@ class TestLoadFontsGoogleFontFallback:
         # No Roboto files
         monkeypatch.setattr(font_management, "FONTS_DIR", fonts_dir)
 
-        with caplog.at_level(logging.WARNING, logger="maptoposter.font_management"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.font_management"):
             result = font_management.load_fonts("CustomFont")
         assert result is None
         assert any("falling back" in r.message.lower() for r in caplog.records)
@@ -614,17 +614,17 @@ class TestLoadFontsGoogleFontFallback:
 class TestFontRequestException:
     """Test generic RequestException is caught (#R18-9b, lines 191-193)."""
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_request_exception_returns_none(
         self, mock_get: MagicMock, caplog: pytest.LogCaptureFixture,
     ) -> None:
         mock_get.side_effect = requests.RequestException("Something weird")
-        with caplog.at_level(logging.WARNING, logger="maptoposter.font_management"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.font_management"):
             result = font_management.download_google_font("FakeFont")
         assert result is None
         assert any("Error downloading" in r.message for r in caplog.records)
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_non_404_http_error_returns_none(
         self, mock_get: MagicMock, caplog: pytest.LogCaptureFixture,
     ) -> None:
@@ -632,14 +632,14 @@ class TestFontRequestException:
         mock_response.status_code = 500
         mock_response.raise_for_status.side_effect = requests.HTTPError(response=mock_response)
         mock_get.return_value = mock_response
-        with caplog.at_level(logging.WARNING, logger="maptoposter.font_management"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.font_management"):
             result = font_management.download_google_font("FakeFont")
         assert result is None
         # CSS fetch now retries on 500, then _RetryableHTTPError is caught
         # by the network-error handler
         assert any("Network error downloading" in r.message or "Retryable HTTP" in r.message for r in caplog.records)
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_non_retryable_http_error_returns_none(
         self, mock_get: MagicMock, caplog: pytest.LogCaptureFixture,
     ) -> None:
@@ -648,7 +648,7 @@ class TestFontRequestException:
         mock_response.status_code = 403
         mock_response.raise_for_status.side_effect = requests.HTTPError(response=mock_response)
         mock_get.return_value = mock_response
-        with caplog.at_level(logging.WARNING, logger="maptoposter.font_management"):
+        with caplog.at_level(logging.WARNING, logger="maptoart.font_management"):
             result = font_management.download_google_font("FakeFont")
         assert result is None
         assert any("HTTP error downloading" in r.message for r in caplog.records)
@@ -657,7 +657,7 @@ class TestFontRequestException:
 class TestRegularWeightFallback:
     """Test 'regular' weight populated from first available when missing (#R20-1)."""
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_only_bold_weight_becomes_regular(
         self,
         mock_get: MagicMock,
@@ -687,7 +687,7 @@ class TestRegularWeightFallback:
         # Request only weight 700 so only "bold" key is populated
         mock_get.side_effect = [css_response, font_response]
 
-        with caplog.at_level(logging.INFO, logger="maptoposter.font_management"):
+        with caplog.at_level(logging.INFO, logger="maptoart.font_management"):
             result = font_management.download_google_font("TestFont", weights=[700])
 
         assert result is not None
@@ -702,7 +702,7 @@ class TestRegularWeightFallback:
 class TestLoadFontsGoogleFontSuccessLog:
     """Test load_fonts logs success when Google Font downloads OK (#R20-2)."""
 
-    @patch("maptoposter.font_management.download_google_font")
+    @patch("maptoart.font_management.download_google_font")
     def test_success_log_emitted(
         self,
         mock_download: MagicMock,
@@ -713,7 +713,7 @@ class TestLoadFontsGoogleFontSuccessLog:
             "bold": "/tmp/custom_bold.woff2",
             "light": "/tmp/custom_light.woff2",
         }
-        with caplog.at_level(logging.INFO, logger="maptoposter.font_management"):
+        with caplog.at_level(logging.INFO, logger="maptoart.font_management"):
             result = font_management.load_fonts("CustomFont")
         assert result is not None
         assert any("loaded successfully" in r.message for r in caplog.records)
@@ -722,7 +722,7 @@ class TestLoadFontsGoogleFontSuccessLog:
 class TestFontFileSizeLimit:
     """Font download rejects oversized files."""
 
-    @patch("maptoposter.font_management.requests.get")
+    @patch("maptoart.font_management.requests.get")
     def test_oversized_font_raises(self, mock_get: MagicMock) -> None:
         resp = MagicMock()
         resp.status_code = 200

@@ -30,11 +30,11 @@ Make sure [uv](https://docs.astral.sh/uv/) is installed. Running `uv run` automa
 
 ```bash
 # First run will automatically install dependencies
-uv run maptoposter-cli --city "Paris" --country "France"
+uv run maptoart-cli --city "Paris" --country "France"
 
 # Or sync dependencies explicitly first (using locked versions)
 uv sync --locked
-uv run maptoposter-cli --city "Paris" --country "France"
+uv run maptoart-cli --city "Paris" --country "France"
 ```
 
 ### With pip + venv
@@ -52,21 +52,21 @@ To regenerate `requirements.txt` from `pyproject.toml`, run `./scripts/sync_requ
 When consuming this package from another repository, either install directly from Git:
 
 ```bash
-pip install "git+https://github.com/EfrenPy/maptoposter.git@main"
+pip install "git+https://github.com/EfrenPy/maptoart.git@main"
 ```
 
 or build a wheel once and install the artifact:
 
 ```bash
 uv build
-pip install dist/maptoposter-*.whl
+pip install dist/maptoart-*.whl
 ```
 
 See `CONSUMERS.md` for end-to-end instructions (editable installs, tagged releases, and CI notes).
 
 ### Fonts Cache
 
-Custom Google Fonts requested via `--font-family` are cached under `~/.cache/maptoposter/fonts` by default (override with `MAPTOPOSTER_FONTS_CACHE`). Drop any `.woff2`/`.ttf` assets there to avoid repeated downloads in CI or air-gapped environments.
+Custom Google Fonts requested via `--font-family` are cached under `~/.cache/maptoart/fonts` by default (override with `MAPTOART_FONTS_CACHE`). Drop any `.woff2`/`.ttf` assets there to avoid repeated downloads in CI or air-gapped environments.
 
 ## Usage
 
@@ -75,23 +75,23 @@ Custom Google Fonts requested via `--font-family` are cached under `~/.cache/map
 If you're using `uv`:
 
 ```bash
-uv run maptoposter-cli --city <city> --country <country> [options]
+uv run maptoart-cli --city <city> --country <country> [options]
 ```
 
 Otherwise (pip + venv):
 
 ```bash
-maptoposter-cli --city <city> --country <country> [options]
+maptoart-cli --city <city> --country <country> [options]
 ```
 
-> **Legacy compatibility:** `maptoposter-cli ...` still works if you prefer calling the script directly.
+> **Legacy compatibility:** `maptoposter-cli ...` still works as an alias during migration.
 
 ### Programmatic Usage
 
 Call the renderer from Python without the CLI:
 
 ```python
-from maptoposter import PosterGenerationOptions, generate_posters
+from maptoart import PosterGenerationOptions, generate_posters
 
 options = PosterGenerationOptions(city="Paris", country="France", theme="terracotta")
 generate_posters(options)
@@ -100,7 +100,7 @@ generate_posters(options)
 A convenience wrapper builds a poster in one call:
 
 ```python
-from maptoposter import PosterGenerationOptions, create_poster_from_options
+from maptoart import PosterGenerationOptions, create_poster_from_options
 
 options = PosterGenerationOptions(city="Paris", country="France", dpi=150)
 create_poster_from_options(options, "terracotta")
@@ -109,8 +109,8 @@ create_poster_from_options(options, "terracotta")
 **Progress streaming** — pass an `on_progress` callback to receive status events:
 
 ```python
-from maptoposter import PosterGenerationOptions, generate_posters
-from maptoposter._util import StatusReporter
+from maptoart import PosterGenerationOptions, generate_posters
+from maptoart._util import StatusReporter
 
 def progress_handler(event: str, message: str, extra: dict):
     print(f"[{event}] {message}")
@@ -123,7 +123,7 @@ generate_posters(options, status_reporter=reporter)
 **Parallel multi-theme rendering** from Python:
 
 ```python
-from maptoposter import PosterGenerationOptions, generate_posters
+from maptoart import PosterGenerationOptions, generate_posters
 
 options = PosterGenerationOptions(
     city="Tokyo", country="Japan",
@@ -135,7 +135,7 @@ generate_posters(options)
 **Batch processing** from Python:
 
 ```python
-from maptoposter import run_batch
+from maptoart import run_batch
 
 result = run_batch("cities.csv", global_overrides={"output_dir": "posters/"})
 print(f"{len(result['successes'])} posters generated, {len(result['failures'])} failures")
@@ -174,27 +174,27 @@ output_dir: /tmp/posters
 no_attribution: true
 ```
 
-You can still combine individual flags, e.g. `maptoposter-cli --config poster.yaml --width 14 --log-format json`. A starter config lives in `examples/config/poster.yaml` and mirrors every CLI option.
+You can still combine individual flags, e.g. `maptoart-cli --config poster.yaml --width 14 --log-format json`. A starter config lives in `examples/config/poster.yaml` and mirrors every CLI option.
 
 ### Structured Logging & Metadata
 
 - Use `--log-format json` to emit newline-delimited JSON events describing progress (`run.start`, `poster.save.complete`, etc.), perfect for machine parsing.
 - Every generated poster now produces a sibling metadata file (`<poster>.json`) containing city/country, theme, DPI, coordinates, timestamps, and attribution flags for audit/billing.
-- Direct poster output anywhere via `--output-dir` or the `MAPTOPOSTER_OUTPUT_DIR` environment variable (defaults to `posters/`).
+- Direct poster output anywhere via `--output-dir` or the `MAPTOART_OUTPUT_DIR` environment variable (defaults to `posters/`).
 
 ### Consuming from Other Projects
 
 Install directly from PyPI:
 
 ```bash
-pip install maptoposter
+pip install maptoart
 ```
 
 For development, use an editable install:
 
 ```bash
-cd /path/to/maptoposterpage
-pip install -e ../maptoposter
+cd /path/to/maptoartpage
+pip install -e ../maptoart
 ```
 
 For immutable builds, run `uv build` or `pip install .` to produce/install a wheel.
@@ -246,16 +246,16 @@ Display city and country names in your language with custom fonts from google fo
 
 ```bash
 # Japanese
-maptoposter-cli -c "Tokyo" -C "Japan" -dc "東京" -dC "日本" --font-family "Noto Sans JP"
+maptoart-cli -c "Tokyo" -C "Japan" -dc "東京" -dC "日本" --font-family "Noto Sans JP"
 
 # Korean
-maptoposter-cli -c "Seoul" -C "South Korea" -dc "서울" -dC "대한민국" --font-family "Noto Sans KR"
+maptoart-cli -c "Seoul" -C "South Korea" -dc "서울" -dC "대한민국" --font-family "Noto Sans KR"
 
 # Arabic
-maptoposter-cli -c "Dubai" -C "UAE" -dc "دبي" -dC "الإمارات" --font-family "Cairo"
+maptoart-cli -c "Dubai" -C "UAE" -dc "دبي" -dC "الإمارات" --font-family "Cairo"
 ```
 
-**Note**: Fonts are automatically downloaded from Google Fonts and cached locally under `~/.cache/maptoposter/fonts` (override with `MAPTOPOSTER_FONTS_CACHE`).
+**Note**: Fonts are automatically downloaded from Google Fonts and cached locally under `~/.cache/maptoart/fonts` (override with `MAPTOART_FONTS_CACHE`).
 
 ### Paper Size Presets
 
@@ -271,19 +271,19 @@ Use `--paper-size` (`-p`) for standard print-ready sizes. Combine with `--orient
 
 ```bash
 # A2 portrait poster
-maptoposter-cli -c "Paris" -C "France" -p A2
+maptoart-cli -c "Paris" -C "France" -p A2
 
 # A3 landscape poster
-maptoposter-cli -c "Tokyo" -C "Japan" -p A3 -o landscape
+maptoart-cli -c "Tokyo" -C "Japan" -p A3 -o landscape
 
 # High-resolution A2 at 600 DPI
-maptoposter-cli -c "London" -C "UK" -p A2 --dpi 600
+maptoart-cli -c "London" -C "UK" -p A2 --dpi 600
 
 # A4 PDF for print shop
-maptoposter-cli -c "Berlin" -C "Germany" -p A4 -f pdf
+maptoart-cli -c "Berlin" -C "Germany" -p A4 -f pdf
 
 # A0 large format poster
-maptoposter-cli -c "New York" -C "USA" -p A0 --dpi 300
+maptoart-cli -c "New York" -C "USA" -p A0 --dpi 300
 ```
 
 ### DPI Guide
@@ -314,10 +314,10 @@ Use these values for `-W` and `-H` to target specific resolutions:
 
 ```bash
 # Simple usage with default theme
-maptoposter-cli -c "Paris" -C "France"
+maptoart-cli -c "Paris" -C "France"
 
 # With custom theme and distance
-maptoposter-cli -c "New York" -C "USA" -t noir -d 12000
+maptoart-cli -c "New York" -C "USA" -t noir -d 12000
 ```
 
 #### Multilingual Examples (Non-Latin Scripts)
@@ -326,62 +326,62 @@ Display city names in their native scripts:
 
 ```bash
 # Japanese
-maptoposter-cli -c "Tokyo" -C "Japan" -dc "東京" -dC "日本" --font-family "Noto Sans JP" -t japanese_ink
+maptoart-cli -c "Tokyo" -C "Japan" -dc "東京" -dC "日本" --font-family "Noto Sans JP" -t japanese_ink
 
 # Korean
-maptoposter-cli -c "Seoul" -C "South Korea" -dc "서울" -dC "대한민국" --font-family "Noto Sans KR" -t midnight_blue
+maptoart-cli -c "Seoul" -C "South Korea" -dc "서울" -dC "대한민국" --font-family "Noto Sans KR" -t midnight_blue
 
 # Thai
-maptoposter-cli -c "Bangkok" -C "Thailand" -dc "กรุงเทพมหานคร" -dC "ประเทศไทย" --font-family "Noto Sans Thai" -t sunset
+maptoart-cli -c "Bangkok" -C "Thailand" -dc "กรุงเทพมหานคร" -dC "ประเทศไทย" --font-family "Noto Sans Thai" -t sunset
 
 # Arabic
-maptoposter-cli -c "Dubai" -C "UAE" -dc "دبي" -dC "الإمارات" --font-family "Cairo" -t terracotta
+maptoart-cli -c "Dubai" -C "UAE" -dc "دبي" -dC "الإمارات" --font-family "Cairo" -t terracotta
 
 # Chinese (Simplified)
-maptoposter-cli -c "Beijing" -C "China" -dc "北京" -dC "中国" --font-family "Noto Sans SC"
+maptoart-cli -c "Beijing" -C "China" -dc "北京" -dC "中国" --font-family "Noto Sans SC"
 
 # Khmer
-maptoposter-cli -c "Phnom Penh" -C "Cambodia" -dc "ភ្នំពេញ" -dC "កម្ពុជា" --font-family "Noto Sans Khmer"
+maptoart-cli -c "Phnom Penh" -C "Cambodia" -dc "ភ្នំពេញ" -dC "កម្ពុជា" --font-family "Noto Sans Khmer"
 ```
 
 #### Advanced Examples
 
 ```bash
 # Iconic grid patterns
-maptoposter-cli -c "New York" -C "USA" -t noir -d 12000           # Manhattan grid
-maptoposter-cli -c "Barcelona" -C "Spain" -t warm_beige -d 8000   # Eixample district
+maptoart-cli -c "New York" -C "USA" -t noir -d 12000           # Manhattan grid
+maptoart-cli -c "Barcelona" -C "Spain" -t warm_beige -d 8000   # Eixample district
 
 # Waterfront & canals
-maptoposter-cli -c "Venice" -C "Italy" -t blueprint -d 4000       # Canal network
-maptoposter-cli -c "Amsterdam" -C "Netherlands" -t ocean -d 6000  # Concentric canals
-maptoposter-cli -c "Dubai" -C "UAE" -t midnight_blue -d 15000     # Palm & coastline
+maptoart-cli -c "Venice" -C "Italy" -t blueprint -d 4000       # Canal network
+maptoart-cli -c "Amsterdam" -C "Netherlands" -t ocean -d 6000  # Concentric canals
+maptoart-cli -c "Dubai" -C "UAE" -t midnight_blue -d 15000     # Palm & coastline
 
 # Radial patterns
-maptoposter-cli -c "Paris" -C "France" -t pastel_dream -d 10000   # Haussmann boulevards
-maptoposter-cli -c "Moscow" -C "Russia" -t noir -d 12000          # Ring roads
+maptoart-cli -c "Paris" -C "France" -t pastel_dream -d 10000   # Haussmann boulevards
+maptoart-cli -c "Moscow" -C "Russia" -t noir -d 12000          # Ring roads
 
 # Organic old cities
-maptoposter-cli -c "Tokyo" -C "Japan" -t japanese_ink -d 15000    # Dense organic streets
-maptoposter-cli -c "Marrakech" -C "Morocco" -t terracotta -d 5000 # Medina maze
-maptoposter-cli -c "Rome" -C "Italy" -t warm_beige -d 8000        # Ancient layout
+maptoart-cli -c "Tokyo" -C "Japan" -t japanese_ink -d 15000    # Dense organic streets
+maptoart-cli -c "Marrakech" -C "Morocco" -t terracotta -d 5000 # Medina maze
+maptoart-cli -c "Rome" -C "Italy" -t warm_beige -d 8000        # Ancient layout
 
 # Coastal cities
-maptoposter-cli -c "San Francisco" -C "USA" -t sunset -d 10000    # Peninsula grid
-maptoposter-cli -c "Sydney" -C "Australia" -t ocean -d 12000      # Harbor city
-maptoposter-cli -c "Mumbai" -C "India" -t contrast_zones -d 18000 # Coastal peninsula
+maptoart-cli -c "San Francisco" -C "USA" -t sunset -d 10000    # Peninsula grid
+maptoart-cli -c "Sydney" -C "Australia" -t ocean -d 12000      # Harbor city
+maptoart-cli -c "Mumbai" -C "India" -t contrast_zones -d 18000 # Coastal peninsula
 
 # River cities
-maptoposter-cli -c "London" -C "UK" -t noir -d 15000              # Thames curves
-maptoposter-cli -c "Budapest" -C "Hungary" -t copper_patina -d 8000  # Danube split
+maptoart-cli -c "London" -C "UK" -t noir -d 15000              # Thames curves
+maptoart-cli -c "Budapest" -C "Hungary" -t copper_patina -d 8000  # Danube split
 
 # Override center coordinates
-maptoposter-cli --city "New York" --country "USA" -lat 40.776676 -long -73.971321 -t noir
+maptoart-cli --city "New York" --country "USA" -lat 40.776676 -long -73.971321 -t noir
 
 # List available themes
-maptoposter-cli --list-themes
+maptoart-cli --list-themes
 
 # Generate posters for every theme
-maptoposter-cli -c "Tokyo" -C "Japan" --all-themes
+maptoart-cli -c "Tokyo" -C "Japan" --all-themes
 ```
 
 ### Batch Mode
@@ -389,7 +389,7 @@ maptoposter-cli -c "Tokyo" -C "Japan" --all-themes
 Generate multiple posters from a CSV or JSON file in one invocation:
 
 ```bash
-maptoposter-cli --batch cities.csv
+maptoart-cli --batch cities.csv
 ```
 
 **CSV format** — must include `city` and `country` columns; optional columns: `theme`, `distance`, `dpi`, `width`, `height`, `format`, `display_city`, `display_country`, `font_family`.
@@ -415,7 +415,7 @@ New York,USA,noir,12000
 After generating posters, produce a self-contained HTML gallery page:
 
 ```bash
-maptoposter-cli --batch cities.csv --gallery
+maptoart-cli --batch cities.csv --gallery
 ```
 
 The gallery is written to the output directory as `index.html` and displays all PNG/SVG/PDF posters with their metadata (city, theme, dimensions) in a responsive CSS grid.
@@ -426,13 +426,13 @@ Speed up multi-theme and batch workflows with multiprocessing. Data fetching and
 
 ```bash
 # Render all 17 themes in parallel for one city
-maptoposter-cli -c "Tokyo" -C "Japan" --all-themes --parallel-themes
+maptoart-cli -c "Tokyo" -C "Japan" --all-themes --parallel-themes
 
 # Process batch cities in parallel (default: 4 workers)
-maptoposter-cli --batch cities.csv --parallel
+maptoart-cli --batch cities.csv --parallel
 
 # Batch with 8 workers + parallel themes + gallery
-maptoposter-cli --batch cities.csv --parallel --max-workers 8 --parallel-themes --gallery
+maptoart-cli --batch cities.csv --parallel --max-workers 8 --parallel-themes --gallery
 ```
 
 > **Note:** Parallel rendering uses `ProcessPoolExecutor` (multiprocessing, not threads) because matplotlib is not thread-safe. Each worker runs in its own process. Default behavior is sequential for backward compatibility; parallelism is opt-in via `--parallel-themes` and `--parallel`.
@@ -443,10 +443,10 @@ OSM data and geocoding results are cached locally with TTL (7 days for map data,
 
 ```bash
 # Show cache statistics (file count, total size)
-maptoposter-cli --cache-info
+maptoart-cli --cache-info
 
 # Delete all cached data
-maptoposter-cli --cache-clear
+maptoart-cli --cache-clear
 ```
 
 ### Auto DPI Reduction
@@ -463,7 +463,7 @@ If the requested DPI would cause memory usage to exceed 2 GB, the DPI is automat
 
 ## Themes
 
-17 themes ship with the package (override via `MAPTOPOSTER_THEMES_DIR`):
+17 themes ship with the package (override via `MAPTOART_THEMES_DIR`):
 
 | Theme | Style |
 |-------|-------|
@@ -487,7 +487,7 @@ If the requested DPI would cause memory usage to exceed 2 GB, the DPI is automat
 
 ## Output
 
-Posters are saved to `posters/` by default (`MAPTOPOSTER_OUTPUT_DIR` or `--output-dir` can override). Filenames follow:
+Posters are saved to `posters/` by default (`MAPTOART_OUTPUT_DIR` or `--output-dir` can override). Filenames follow:
 
 ```text
 {city}_{theme}_{YYYYMMDD_HHMMSS}.png
@@ -520,21 +520,21 @@ Create a JSON file in `themes/` directory:
 ## Project Structure
 
 ```text
-maptoposter/
-├── create_map_poster.py    # Legacy wrapper (calls maptoposter-cli)
+maptoart/
+├── create_map_poster.py    # Legacy wrapper (calls maptoart-cli)
 ├── Dockerfile              # Multi-stage Docker build
 ├── src/
-│   └── maptoposter/
+│   └── maptoart/
 │       ├── __init__.py     # Public programmatic API
 │       ├── _util.py        # StatusReporter, _emit_status, CacheError
 │       ├── batch.py        # CSV/JSON batch processing
-│       ├── cli.py          # CLI entry point (maptoposter-cli)
+│       ├── cli.py          # CLI entry point (maptoart-cli)
 │       ├── core.py         # Rendering + data fetching helpers
 │       ├── font_management.py  # Font loading and Google Fonts integration
 │       ├── gallery.py      # HTML gallery generator
 │       ├── geocoding.py    # Nominatim geocoding with tenacity retries
 │       ├── rendering.py    # Figure setup, render layers, typography
-│       ├── themes/         # Packaged themes (override via MAPTOPOSTER_THEMES_DIR)
+│       ├── themes/         # Packaged themes (override via MAPTOART_THEMES_DIR)
 │       └── fonts/          # Bundled Roboto fonts
 ├── posters/                # Generated posters
 └── README.md
@@ -546,11 +546,11 @@ maptoposter/
 A `Dockerfile` is provided for containerized usage:
 
 ```bash
-docker build -t maptoposter .
-docker run --rm -v "$PWD/posters:/home/maptoposter/posters" maptoposter --city "Paris" --country "France"
+docker build -t maptoart .
+docker run --rm -v "$PWD/posters:/home/maptoart/posters" maptoart --city "Paris" --country "France"
 ```
 
-Pre-built images are pushed to `ghcr.io/efrenpy/maptoposter` on each GitHub release.
+Pre-built images are pushed to `ghcr.io/efrenpy/maptoart` on each GitHub release.
 
 ## Hacker's Guide
 

@@ -1,9 +1,9 @@
-# AGENTS GUIDE FOR MAPTOPOSTER
+# AGENTS GUIDE FOR MAPTOART
 This file captures the operational knowledge agentic contributors need: how to set up the project, which commands CI expects, how to run targeted checks, and the coding style guardrails that keep the CLI reliable. Keep it in sync with the repo.
 
 ## Repository Snapshot
-- Primary entrypoint: `src/maptoposter/core.py` (data fetching, poster generation, theme resolution).
-- CLI entry: `src/maptoposter/cli.py` exposes the `maptoposter-cli` console script (supports `--config` files, structured logging, metadata output, parallel rendering).
+- Primary entrypoint: `src/maptoart/core.py` (data fetching, poster generation, theme resolution).
+- CLI entry: `src/maptoart/cli.py` exposes the `maptoart-cli` console script (supports `--config` files, structured logging, metadata output, parallel rendering).
 - Modules (split from core in v0.4.0):
   - `rendering.py` — figure setup, render layers, typography, gradient fade
   - `geocoding.py` — Nominatim geocoding with tenacity retries, coordinate validation
@@ -11,18 +11,18 @@ This file captures the operational knowledge agentic contributors need: how to s
   - `batch.py` — CSV/JSON batch processing, parallel city processing, pre-geocoding
   - `gallery.py` — HTML gallery generator with CSS grid and metadata cards
   - `font_management.py` — Google Fonts download + caching logic
-- Assets: `src/maptoposter/themes/*.json`, `src/maptoposter/fonts/` (Roboto defaults + cached web fonts), `posters/` (generated output), `cache/` (OSM + geocode cache, ignored).
+- Assets: `src/maptoart/themes/*.json`, `src/maptoart/fonts/` (Roboto defaults + cached web fonts), `posters/` (generated output), `cache/` (OSM + geocode cache, ignored).
 - Tooling manifests: `pyproject.toml`, `requirements.txt`, `.flake8`, `.github/workflows/*.yml`, `test/all_variations.sh`.
 - Python target: 3.11+ (CI runs 3.11-3.14). Most dependencies need native libs (GEOS/Proj via `pyproj`/`shapely`).
 - Test suite: 414 tests, 100% coverage enforced.
 
 ## Environment Setup
-- Preferred workflow is [uv](https://docs.astral.sh/uv/): `uv sync --locked` to install with `uv.lock`, or `uv run maptoposter-cli --city "Paris" --country "France"` to auto-create the venv on demand.
+- Preferred workflow is [uv](https://docs.astral.sh/uv/): `uv sync --locked` to install with `uv.lock`, or `uv run maptoart-cli --city "Paris" --country "France"` to auto-create the venv on demand.
 - Traditional venv: `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`.
 - When debugging CI parity, mirror its steps: upgrade pip, `pip install -r requirements.txt` (no extras), then `pip install flake8 pylint mypy pip-audit`.
 - Fonts download into `fonts/cache/`. The directory is gitignored; do not commit downloaded `.woff2`/`.ttf` files.
 - Nominatim and Google Fonts depend on outbound HTTPS. Ensure proxies/firewalls allow requests.
-- `MAPTOPOSTER_OUTPUT_DIR` overrides where posters/metadata are written. Users can also pass `--output-dir` on the CLI.
+- `MAPTOART_OUTPUT_DIR` overrides where posters/metadata are written. Users can also pass `--output-dir` on the CLI.
 
 ## Build & Packaging Commands
 - `uv run python -m compileall . -q` — matches the CI "Validate Python syntax" stage.
@@ -39,10 +39,10 @@ This file captures the operational knowledge agentic contributors need: how to s
 - `uv run pip-audit -r requirements.txt` — mirrors `dependency-check` job; run before bumping dependencies.
 - Keep `tqdm`, `osmnx`, and `geopandas` imports grouped under third-party block; avoid unused imports or wildcard pulls to stay lint-clean.
 
-- `uv run maptoposter-cli --help` — sanity-checks argparse wiring.
-- `uv run maptoposter-cli --list-themes` — ensures JSON themes parse cleanly and required files exist.
+- `uv run maptoart-cli --help` — sanity-checks argparse wiring.
+- `uv run maptoart-cli --list-themes` — ensures JSON themes parse cleanly and required files exist.
 - `bash test/all_variations.sh` — exhaustive integration exercise that generates Bengaluru posters in every theme/size. It is network and disk heavy; prefer targeted runs while iterating.
-- **Single scenario regression:** `uv run maptoposter-cli -c "Paris" -C "France" -t terracotta -d 12000 --dpi 150`. Swap arguments to stress specific code paths (custom fonts, non-Latin labels, etc.).
+- **Single scenario regression:** `uv run maptoart-cli -c "Paris" -C "France" -t terracotta -d 12000 --dpi 150`. Swap arguments to stress specific code paths (custom fonts, non-Latin labels, etc.).
 - Unit tests live under `tests/`. Install dev extras once via `uv pip install '.[dev]'`, then run `uv run pytest` (fixtures mock geocoding/OSM data, so tests avoid network calls). CI enforces 100% coverage via `--cov-fail-under=100`.
 - Run a single test with `uv run pytest tests/test_core.py::TestClassName::test_method`.
 
@@ -50,7 +50,7 @@ This file captures the operational knowledge agentic contributors need: how to s
 - Theme JSON contract: keys `bg`, `text`, `gradient_color`, `water`, `parks`, `road_*`, optionally new layer entries. Always provide hex strings and keep descriptions short; CLI uses them in logs.
 - Each generated poster also writes a metadata JSON sibling capturing coordinates, DPI, theme, and attribution flags. Keep schema additions backward-compatible and reflect changes in README/tests.
 - Fonts: default Roboto weights live in `fonts/`. Custom fonts come from Google Fonts via HTTPS; `font_management.download_google_font` caches by `font_family` and weight. Ensure new code respects `font_family` CLI flag and gracefully falls back to Roboto when downloads fail.
-- Cache: `MAPTOPOSTER_CACHE_DIR` env var overrides default `cache/` (legacy `CACHE_DIR` still works as fallback). Cached coordinates and graph data are pickled; do not change schema lightly. Always wrap cache operations in `try/except CacheError` if you extend caching.
+- Cache: `MAPTOART_CACHE_DIR` env var overrides default `cache/` (legacy `CACHE_DIR` still works as fallback). Cached coordinates and graph data are pickled; do not change schema lightly. Always wrap cache operations in `try/except CacheError` if you extend caching.
 
 ## Architecture Overview
 - CLI parses args, optionally lists themes, resolves coordinates (geocode or manual lat/long), loads theme + fonts, and calls `create_poster` for each requested theme.
@@ -66,7 +66,7 @@ This file captures the operational knowledge agentic contributors need: how to s
 - **Key constraint:** All worker functions must be pickle-serializable (top-level, no lambdas, no closures over unpicklable objects). This affects testing—mocking `ProcessPoolExecutor` itself is required since `MagicMock` objects can't be pickled.
 
 ## Import & Module Guidelines
-- Order imports: stdlib → third-party → local. Use blank lines to separate groups, mirroring `maptoposter/core.py`.
+- Order imports: stdlib → third-party → local. Use blank lines to separate groups, mirroring `maptoart/core.py`.
 - Avoid `from module import *`. Prefer explicit names and, where relevant, alias heavy modules (`matplotlib.pyplot as plt`).
 - Type-aware imports belong near the rest of the group; do not hide them inside functions unless they are optional and expensive.
 - Keep CLI-only dependencies (e.g., `argparse`, `sys`) at module scope; dynamic imports complicate linting/type checking.
@@ -121,7 +121,7 @@ This file captures the operational knowledge agentic contributors need: how to s
 - There are currently no `.cursor/rules*` or `.github/copilot-instructions.md` files. If such tooling guidance is added later, reference it here immediately so agents inherit the same guardrails.
 
 - Ensure `uv run flake8`, `uv run pylint`, and `uv run mypy` pass locally.
-- Run `uv run maptoposter-cli --help` plus at least one targeted poster generation command relevant to the change (structured logs help when inspecting automation output).
+- Run `uv run maptoart-cli --help` plus at least one targeted poster generation command relevant to the change (structured logs help when inspecting automation output).
 - Install dev extras and run `uv run pytest` to keep the regression suite green (especially after touching typography/geocoding/theme logic).
 - If dependency versions were edited, rerun `./scripts/sync_requirements.sh` and include the regenerated `requirements.txt` in the commit; keep `uv.lock` up to date as well.
 - For dependency bumps, capture `uv run pip-audit -r requirements.txt` output in the PR description if issues are resolved.
@@ -141,7 +141,7 @@ This file captures the operational knowledge agentic contributors need: how to s
 - When new CLI flags adjust typography, ensure they gracefully fall back to defaults and include docstrings.
 
 ## Cache & External Services
-- Respect `MAPTOPOSTER_CACHE_DIR` overrides to support ephemeral filesystems; use `Path`/`os.makedirs(..., exist_ok=True)` like `_cache_path` does.
+- Respect `MAPTOART_CACHE_DIR` overrides to support ephemeral filesystems; use `Path`/`os.makedirs(..., exist_ok=True)` like `_cache_path` does.
 - Cached pickles must remain backward-compatible; update keys or version them explicitly before changing structure.
 - Network calls (Nominatim, Google Fonts) should set timeouts and catch `requests`/`geopy` errors; bubble up actionable messages.
 - Geocoding is pre-resolved in batch via `_pre_geocode_batch()` (still sequential, respects rate limits). Never parallelize geocode requests without revisiting Nominatim rate-limit guards.

@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 import yaml
 
-from maptoposter import cli
+from maptoart import cli
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -113,7 +113,7 @@ class TestMainEntryPoint:
         output = capsys.readouterr().out
         assert "City Map Poster Generator" in output
 
-    @patch("maptoposter.cli.list_themes")
+    @patch("maptoart.cli.list_themes")
     def test_list_themes_flag(self, mock_list: MagicMock) -> None:
         result = cli.main(["--list-themes"])
         assert result == 0
@@ -132,7 +132,7 @@ class TestMainEntryPoint:
         result = cli.main(["--debug", "--city", "Paris"])
         assert result == 1  # missing country
 
-    @patch("maptoposter.cli.list_themes")
+    @patch("maptoart.cli.list_themes")
     def test_debug_with_list_themes(self, mock_list: MagicMock) -> None:
         result = cli.main(["--debug", "--list-themes"])
         assert result == 0
@@ -191,8 +191,8 @@ class TestConfigFileLoading:
 class TestDryRun:
     """Tests for --dry-run flag."""
 
-    @patch("maptoposter.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.cli.generate_posters")
+    @patch("maptoart.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.cli.generate_posters")
     def test_dry_run_returns_zero_with_summary(
         self,
         mock_generate: MagicMock,
@@ -207,8 +207,8 @@ class TestDryRun:
         assert "Paris" in output
         mock_generate.assert_not_called()
 
-    @patch("maptoposter.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
-    @patch("maptoposter.cli.generate_posters")
+    @patch("maptoart.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.cli.generate_posters")
     def test_dry_run_does_not_call_generate(
         self,
         mock_generate: MagicMock,
@@ -283,7 +283,7 @@ class TestNoAttributionOverride:
 class TestCacheClearFlag:
     """Tests for --cache-clear flag."""
 
-    @patch("maptoposter.core.cache_clear", return_value=5)
+    @patch("maptoart.core.cache_clear", return_value=5)
     def test_cache_clear_returns_zero(
         self, mock_clear: MagicMock, capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -292,7 +292,7 @@ class TestCacheClearFlag:
         output = capsys.readouterr().out
         assert "5" in output
 
-    @patch("maptoposter.core.cache_clear", return_value=0)
+    @patch("maptoart.core.cache_clear", return_value=0)
     def test_cache_clear_empty(
         self, mock_clear: MagicMock, capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -305,7 +305,7 @@ class TestCacheClearFlag:
 class TestCacheInfoFlag:
     """Tests for --cache-info flag."""
 
-    @patch("maptoposter.core.cache_info", return_value={
+    @patch("maptoart.core.cache_info", return_value={
         "total_files": 2, "total_bytes": 4096,
         "entries": [{"key": "test_v2", "size_bytes": 2048, "created": None, "ttl": None}],
     })
@@ -321,7 +321,7 @@ class TestCacheInfoFlag:
 class TestBatchCLI:
     """Tests for --batch flag."""
 
-    @patch("maptoposter.batch.run_batch", return_value={"total": 2, "successes": ["a", "b"], "failures": []})
+    @patch("maptoart.batch.run_batch", return_value={"total": 2, "successes": ["a", "b"], "failures": []})
     def test_batch_dispatches(self, mock_batch: MagicMock, tmp_path: Path) -> None:
         csv_file = tmp_path / "cities.csv"
         csv_file.write_text("city,country\nParis,France\nTokyo,Japan\n")
@@ -333,7 +333,7 @@ class TestBatchCLI:
         assert "city" not in overrides
         assert "country" not in overrides
 
-    @patch("maptoposter.batch.run_batch", return_value={"total": 2, "successes": [], "failures": []})
+    @patch("maptoart.batch.run_batch", return_value={"total": 2, "successes": [], "failures": []})
     def test_batch_dry_run_passes_flag(self, mock_batch: MagicMock, tmp_path: Path) -> None:
         csv_file = tmp_path / "cities.csv"
         csv_file.write_text("city,country\nParis,France\nTokyo,Japan\n")
@@ -350,7 +350,7 @@ class TestVersionFlag:
         with pytest.raises(SystemExit, match="0"):
             cli.main(["--version"])
         output = capsys.readouterr().out
-        assert "maptoposter-cli" in output
+        assert "maptoart-cli" in output
 
 
 class TestCLIHelpText:
@@ -369,10 +369,10 @@ class TestCLIHelpText:
     def test_help_text_documents_env_vars(self) -> None:
         parser = _build_parser()
         help_text = parser.format_help()
-        assert "MAPTOPOSTER_OUTPUT_DIR" in help_text
-        assert "MAPTOPOSTER_CACHE_DIR" in help_text
-        assert "MAPTOPOSTER_THEMES_DIR" in help_text
-        assert "MAPTOPOSTER_NOMINATIM_DELAY" in help_text
+        assert "MAPTOART_OUTPUT_DIR" in help_text
+        assert "MAPTOART_CACHE_DIR" in help_text
+        assert "MAPTOART_THEMES_DIR" in help_text
+        assert "MAPTOART_NOMINATIM_DELAY" in help_text
 
 
 class TestParseCoordinatesNone:
@@ -389,7 +389,7 @@ class TestParseCoordinatesNone:
 class TestDryRunKBFormatting:
     """Test dry-run shows KB for small poster sizes (#R19-4)."""
 
-    @patch("maptoposter.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
     def test_small_size_shows_kb(
         self,
         mock_coords: MagicMock,
@@ -411,9 +411,9 @@ class TestDryRunKBFormatting:
 class TestGalleryFlag:
     """Test --gallery flag triggers gallery generation (#R19-5)."""
 
-    @patch("maptoposter.gallery.generate_gallery", return_value="/tmp/gallery.html")
-    @patch("maptoposter.cli.generate_posters", return_value=["/tmp/paris_custom.png"])
-    @patch("maptoposter.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.gallery.generate_gallery", return_value="/tmp/gallery.html")
+    @patch("maptoart.cli.generate_posters", return_value=["/tmp/paris_custom.png"])
+    @patch("maptoart.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
     def test_gallery_flag_calls_generate_gallery(
         self,
         mock_coords: MagicMock,
@@ -431,8 +431,8 @@ class TestGalleryFlag:
         output = capsys.readouterr().out
         assert "Gallery" in output
 
-    @patch("maptoposter.gallery.generate_gallery", return_value="/tmp/gallery.html")
-    @patch("maptoposter.batch.run_batch", return_value={"successes": ["/tmp/london.png"], "failures": []})
+    @patch("maptoart.gallery.generate_gallery", return_value="/tmp/gallery.html")
+    @patch("maptoart.batch.run_batch", return_value={"successes": ["/tmp/london.png"], "failures": []})
     def test_batch_gallery_flag(
         self,
         mock_batch: MagicMock,
@@ -449,8 +449,8 @@ class TestGalleryFlag:
         output = capsys.readouterr().out
         assert "Gallery" in output
 
-    @patch("maptoposter.cli.generate_posters", return_value=["/tmp/paris_custom.png"])
-    @patch("maptoposter.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.cli.generate_posters", return_value=["/tmp/paris_custom.png"])
+    @patch("maptoart.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
     def test_no_gallery_flag_skips_gallery(
         self,
         mock_coords: MagicMock,
@@ -470,8 +470,8 @@ class TestGalleryFlag:
 class TestGeneratePostersValueError:
     """Test main() handles ValueError from generate_posters (#R20-3)."""
 
-    @patch("maptoposter.cli.generate_posters", side_effect=ValueError("bad config"))
-    @patch("maptoposter.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
+    @patch("maptoart.cli.generate_posters", side_effect=ValueError("bad config"))
+    @patch("maptoart.cli._resolve_coordinates", return_value=(48.8566, 2.3522))
     def test_value_error_returns_1(
         self,
         mock_coords: MagicMock,
@@ -555,7 +555,7 @@ class TestParallelThemesCLI:
 class TestParallelBatchCLI:
     """Tests for --parallel and --max-workers batch CLI flags."""
 
-    @patch("maptoposter.batch.run_batch", return_value={"total": 2, "successes": ["a"], "failures": []})
+    @patch("maptoart.batch.run_batch", return_value={"total": 2, "successes": ["a"], "failures": []})
     def test_batch_parallel_flags_passed(self, mock_batch: MagicMock, tmp_path: Path) -> None:
         csv_file = tmp_path / "cities.csv"
         csv_file.write_text("city,country\nParis,France\n")

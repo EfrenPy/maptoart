@@ -17,25 +17,25 @@ geographiclib==2.1
     # via geopy
 geopandas==1.1.2
     # via
-    #   maptoposter (pyproject.toml)
+    #   maptoart (pyproject.toml)
     #   osmnx
 geopy==2.4.1
-    # via maptoposter (pyproject.toml)
+    # via maptoart (pyproject.toml)
 idna==3.11
     # via requests
 kiwisolver==1.4.9
     # via matplotlib
 lat-lon-parser==1.3.1
-    # via maptoposter (pyproject.toml)
+    # via maptoart (pyproject.toml)
 matplotlib==3.10.8
-    # via maptoposter (pyproject.toml)
+    # via maptoart (pyproject.toml)
 networkx==3.6.1
     # via
-    #   maptoposter (pyproject.toml)
+    #   maptoart (pyproject.toml)
     #   osmnx
 numpy==2.3.3
     # via
-    #   maptoposter (pyproject.toml)
+    #   maptoart (pyproject.toml)
     #   contourpy
     #   geopandas
     #   matplotlib
@@ -44,7 +44,7 @@ numpy==2.3.3
     #   pyogrio
     #   shapely
 osmnx==2.0.7
-    # via maptoposter (pyproject.toml)
+    # via maptoart (pyproject.toml)
 packaging==25.0
     # via
     #   geopandas
@@ -69,22 +69,22 @@ python-dateutil==2.9.0.post0
 pytz==2025.2
     # via pandas
 pyyaml==6.0.2
-    # via maptoposter (pyproject.toml)
+    # via maptoart (pyproject.toml)
 requests==2.32.5
     # via
-    #   maptoposter (pyproject.toml)
+    #   maptoart (pyproject.toml)
     #   osmnx
 shapely==2.1.2
     # via
-    #   maptoposter (pyproject.toml)
+    #   maptoart (pyproject.toml)
     #   geopandas
     #   osmnx
 six==1.17.0
     # via python-dateutil
 tenacity==8.2.3
-    # via maptoposter (pyproject.toml)
+    # via maptoart (pyproject.toml)
 tqdm==4.67.1
-    # via maptoposter (pyproject.toml)
+    # via maptoart (pyproject.toml)
 tzdata==2025.3
     # via pandas
 urllib3==2.6.3

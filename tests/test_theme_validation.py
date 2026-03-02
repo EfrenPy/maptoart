@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import maptoposter.core as core
+import maptoart.core as core
 
 
 class TestThemeValidation:

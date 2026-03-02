@@ -1,4 +1,4 @@
-"""Shared test fixtures for the maptoposter test suite."""
+"""Shared test fixtures for the maptoart test suite."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from unittest.mock import patch
 import networkx as nx
 import pytest
 
-import maptoposter.core as core
-from maptoposter.core import PosterGenerationOptions
+import maptoart.core as core
+from maptoart.core import PosterGenerationOptions
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def _clear_theme_cache() -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def _patch_geocoding_sleep() -> Iterator[None]:
     """Eliminate the 1-second Nominatim rate-limit delay in all tests (#14)."""
-    with patch("maptoposter.geocoding.time.sleep"):
+    with patch("maptoart.geocoding.time.sleep"):
         with patch("tenacity.nap.time.sleep"):
             yield
 
