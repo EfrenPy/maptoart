@@ -20,15 +20,10 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_FONTS_DIR = PACKAGE_DIR / "fonts"
 DEFAULT_CACHE_DIR = Path(
     os.environ.get("MAPTOART_FONTS_CACHE")
-    or os.environ.get("MAPTOPOSTER_FONTS_CACHE")
     or Path.home() / ".cache" / "maptoart" / "fonts"
 )
 
-FONTS_DIR = Path(
-    os.environ.get("MAPTOART_FONTS_DIR")
-    or os.environ.get("MAPTOPOSTER_FONTS_DIR")
-    or str(DEFAULT_FONTS_DIR)
-)
+FONTS_DIR = Path(os.environ.get("MAPTOART_FONTS_DIR") or str(DEFAULT_FONTS_DIR))
 FONTS_CACHE_DIR = DEFAULT_CACHE_DIR
 
 _RETRYABLE_HTTP_CODES = {429, 500, 502, 503}

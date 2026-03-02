@@ -2,7 +2,7 @@
 
 Environment variables read at **import time** (changes after import are ignored):
 
-* ``MAPTOART_CACHE_DIR`` / ``MAPTOPOSTER_CACHE_DIR`` / ``CACHE_DIR`` — directory for OSM data cache
+* ``MAPTOART_CACHE_DIR`` / ``CACHE_DIR`` — directory for OSM data cache
   (default: ``./cache``).
 """
 
@@ -131,10 +131,8 @@ _logger = logging.getLogger(__name__)
 
 MAX_INPUT_FILE_SIZE = 1_048_576  # 1 MB — shared limit for config/batch files
 
-CACHE_DIR_PATH = (
-    os.environ.get("MAPTOART_CACHE_DIR")
-    or os.environ.get("MAPTOPOSTER_CACHE_DIR")
-    or os.environ.get("CACHE_DIR", "cache")
+CACHE_DIR_PATH = os.environ.get("MAPTOART_CACHE_DIR") or os.environ.get(
+    "CACHE_DIR", "cache"
 )
 CACHE_DIR = Path(CACHE_DIR_PATH)
 _CACHE_VERSION = "v2"

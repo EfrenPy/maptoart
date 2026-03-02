@@ -4,12 +4,8 @@ Environment variables
 ---------------------
 MAPTOART_THEMES_DIR
     Custom themes directory (overrides bundled themes).
-MAPTOPOSTER_THEMES_DIR
-    Legacy alias for ``MAPTOART_THEMES_DIR``.
 MAPTOART_OUTPUT_DIR
     Default output directory for generated posters.
-MAPTOPOSTER_OUTPUT_DIR
-    Legacy alias for ``MAPTOART_OUTPUT_DIR``.
 MAPTOART_CACHE_DIR
     OSM data cache directory.  Falls back to ``CACHE_DIR`` (legacy) then ``cache/``.
 MAPTOART_FONTS_DIR
@@ -107,23 +103,13 @@ from .rendering import (  # noqa: F401
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_THEMES_DIR = PACKAGE_DIR / "themes"
-THEMES_DIR = Path(
-    os.environ.get("MAPTOART_THEMES_DIR")
-    or os.environ.get("MAPTOPOSTER_THEMES_DIR")
-    or str(DEFAULT_THEMES_DIR)
-)
+THEMES_DIR = Path(os.environ.get("MAPTOART_THEMES_DIR") or str(DEFAULT_THEMES_DIR))
 DEFAULT_POSTERS_DIR = "posters"
 OUTPUT_DIR_ENV = "MAPTOART_OUTPUT_DIR"
-LEGACY_OUTPUT_DIR_ENV = "MAPTOPOSTER_OUTPUT_DIR"
 
 
 def _resolve_output_dir(options_output_dir: str | None) -> str:
-    return (
-        options_output_dir
-        or os.environ.get(OUTPUT_DIR_ENV)
-        or os.environ.get(LEGACY_OUTPUT_DIR_ENV)
-        or DEFAULT_POSTERS_DIR
-    )
+    return options_output_dir or os.environ.get(OUTPUT_DIR_ENV) or DEFAULT_POSTERS_DIR
 
 
 # Paper sizes in inches (width x height for portrait orientation)

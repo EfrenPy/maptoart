@@ -40,15 +40,13 @@ except PackageNotFoundError:  # pragma: no cover
     _MAPTOART_VERSION = "0.0.0"
 
 # Nominatim usage policy requires max 1 request/second. Configurable via
-# MAPTOART_NOMINATIM_DELAY (or legacy MAPTOPOSTER_NOMINATIM_DELAY).
+# MAPTOART_NOMINATIM_DELAY.
 _NOMINATIM_DELAY_DEFAULT = 1.0
 
 
 def _nominatim_delay() -> float:
     """Return the configured Nominatim rate-limit delay (lazy env-var read)."""
-    raw = os.environ.get("MAPTOART_NOMINATIM_DELAY") or os.environ.get(
-        "MAPTOPOSTER_NOMINATIM_DELAY"
-    )
+    raw = os.environ.get("MAPTOART_NOMINATIM_DELAY")
     if raw is None:
         return _NOMINATIM_DELAY_DEFAULT
     try:

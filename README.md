@@ -84,8 +84,6 @@ Otherwise (pip + venv):
 maptoart-cli --city <city> --country <country> [options]
 ```
 
-> **Legacy compatibility:** `maptoposter-cli ...` still works as an alias during migration.
-
 ### Programmatic Usage
 
 Call the renderer from Python without the CLI:

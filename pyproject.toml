@@ -37,7 +37,6 @@ dependencies = [
 
 [project.scripts]
 maptoart-cli = "maptoart.cli:_entry"
-maptoposter-cli = "maptoart.cli:_entry"
 
 [project.urls]
 Homepage = "https://github.com/EfrenPy/maptoart"

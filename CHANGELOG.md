@@ -8,12 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.1] - 2026-03-02
 
 ### Changed
-- Rebranded project/package/CLI from `maptoposter` to `maptoart` across source, docs, workflows, and Docker assets.
+- Rebranded project/package/CLI to `maptoart` across source, docs, workflows, and Docker assets.
 - Updated repository, PyPI, and GHCR references to the new `EfrenPy/maptoart` name.
 
 ### Compatibility
-- Kept a legacy CLI entry point alias: `maptoposter-cli` now routes to `maptoart.cli:_entry`.
-- Added legacy environment variable fallbacks (`MAPTOPOSTER_*`) while standardizing on `MAPTOART_*`.
+- Standardized environment variables and tooling under the `MAPTOART_*` naming.
 
 ## [0.5.0] - 2026-02-27
 
