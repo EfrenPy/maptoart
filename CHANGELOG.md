@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-03-11
+
+### Performance
+- Removed `bbox_inches="tight"` from `savefig` — eliminates expensive double-render at high DPI (saves 5-15s per poster).
+- Added `MAPTOART_PNG_COMPRESS_LEVEL` env var (default: `1`). Faster PNG compression trades ~20% larger files for 2-5s faster saves.
+- Added `MAPTOART_OSM_RATE_LIMIT` env var (default: `0.3`). Set to `0` on dedicated servers to skip inter-request sleep delays.
+- Forced Agg matplotlib backend — prevents GUI overhead on headless servers.
+- Enabled osmnx HTTP-level caching alongside the existing pickle cache for double-layer cache hits.
+
 ## [0.5.1] - 2026-03-02
 
 ### Changed

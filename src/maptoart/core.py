@@ -15,6 +15,12 @@ MAPTOART_FONTS_CACHE
 MAPTOART_NOMINATIM_DELAY
     Rate-limit delay (seconds) before each Nominatim request (default: ``1``).
     Set to ``0`` for private Nominatim instances.
+MAPTOART_OSM_RATE_LIMIT
+    Rate-limit delay (seconds) after each OSM download (default: ``0.3``).
+    Set to ``0`` on dedicated servers to skip the inter-request sleep.
+MAPTOART_PNG_COMPRESS_LEVEL
+    PNG compression level 0-9 (default: ``1``).  Lower = faster saves,
+    slightly larger files.  The default of 1 is optimised for speed.
 
 ``MAPTOART_THEMES_DIR``, ``MAPTOART_CACHE_DIR`` / ``CACHE_DIR``, and
 ``MAPTOART_FONTS_DIR`` are read **at import time**.  Changes to these
@@ -41,8 +47,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Sequence, TypeVar, cast
 
+import matplotlib
+matplotlib.use("Agg")  # headless backend — avoids GUI overhead on servers
 import matplotlib.pyplot as plt
 import osmnx as ox
+
+# Enable osmnx HTTP-level caching (double-layer: osmnx HTTP cache + our pickle cache)
+ox.settings.use_cache = True
+_osmnx_cache_dir = os.environ.get("MAPTOART_OSM_CACHE_DIR") or os.environ.get(
+    "CACHE_DIR", "cache"
+)
+ox.settings.cache_folder = os.path.join(_osmnx_cache_dir, "osmnx_http")
 from geopandas import GeoDataFrame
 from networkx import MultiDiGraph
 
@@ -175,6 +190,13 @@ _CITY_SLUG_RE = re.compile(r"[^\w\-]")
 
 
 _logger = logging.getLogger(__name__)
+
+# Configurable rate-limit delay after each OSM download (seconds).
+# Set MAPTOART_OSM_RATE_LIMIT=0 on dedicated servers to eliminate the sleep.
+_OSM_RATE_LIMIT: float = float(os.environ.get("MAPTOART_OSM_RATE_LIMIT", "0.3"))
+
+# PNG compression level (0=no compression, 9=max). Lower = faster saves.
+_PNG_COMPRESS_LEVEL: int = int(os.environ.get("MAPTOART_PNG_COMPRESS_LEVEL", "1"))
 
 
 @dataclass(slots=True)
@@ -532,7 +554,7 @@ def _cached_fetch(
     name: str,
     *,
     status_reporter: StatusReporter | None = None,
-    rate_limit: float = 0.3,
+    rate_limit: float | None = None,
     **event_kwargs: Any,
 ) -> _T | None:
     """Shared cache-check → download → cache-set → error-handling pattern."""
@@ -558,7 +580,9 @@ def _cached_fetch(
             **event_kwargs,
         )
         result = fetcher()
-        time.sleep(rate_limit)
+        effective_rate_limit = rate_limit if rate_limit is not None else _OSM_RATE_LIMIT
+        if effective_rate_limit > 0:
+            time.sleep(effective_rate_limit)
         try:
             cache_set(cache_key, result, ttl=_CACHE_TTL_DATA)
         except CacheError as e:
@@ -622,7 +646,6 @@ def fetch_graph(
         ),
         "graph",
         status_reporter=status_reporter,
-        rate_limit=0.5,
         distance=dist,
     )
 
@@ -780,14 +803,16 @@ def _save_output(
     )
 
     fmt = output_format.lower()
+    # Axes already fill the figure via set_position((0,0,1,1)), so we skip
+    # bbox_inches="tight" which forces an expensive double-render at high DPI.
     save_kwargs: dict[str, Any] = dict(
         facecolor=theme["bg"],
-        bbox_inches="tight",
-        pad_inches=0.05,
+        pad_inches=0,
     )
 
     if fmt == "png":
         save_kwargs["dpi"] = dpi
+        save_kwargs["pil_kwargs"] = {"compress_level": _PNG_COMPRESS_LEVEL}
         output_width_px = int(width * dpi)
         output_height_px = int(height * dpi)
         _emit_status(
