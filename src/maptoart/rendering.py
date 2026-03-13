@@ -222,6 +222,40 @@ def _project_and_plot_layer(
     polys.plot(ax=ax, facecolor=color, edgecolor="none", zorder=zorder)
 
 
+def _truncate_graph_to_bbox(
+    g_proj: MultiDiGraph,
+    xlim: tuple[float, float],
+    ylim: tuple[float, float],
+    margin: float = 0.1,
+) -> MultiDiGraph:
+    """Remove nodes outside the visible bbox (with margin) to speed up plotting.
+
+    When data is fetched at a larger radius than the visible crop (e.g. 20 km
+    warm cache for a 5 km render), this avoids projecting and drawing thousands
+    of off-screen edges.  A 10% margin ensures roads crossing the boundary
+    are included.
+    """
+    x_min, x_max = xlim
+    y_min, y_max = ylim
+    dx = (x_max - x_min) * margin
+    dy = (y_max - y_min) * margin
+    x_min -= dx
+    x_max += dx
+    y_min -= dy
+    y_max += dy
+
+    nodes_to_keep = [
+        n for n, d in g_proj.nodes(data=True)
+        if x_min <= d.get("x", 0) <= x_max and y_min <= d.get("y", 0) <= y_max
+    ]
+    if len(nodes_to_keep) == g_proj.number_of_nodes() or len(nodes_to_keep) < 10:
+        return g_proj  # no truncation needed or too few nodes
+    sub = g_proj.subgraph(nodes_to_keep).copy()
+    # Preserve CRS metadata needed by osmnx
+    sub.graph.update(g_proj.graph)
+    return sub
+
+
 def _render_layers(
     ax: Any,
     g_proj: MultiDiGraph,
@@ -235,16 +269,22 @@ def _render_layers(
     status_reporter: StatusReporter | None = None,
 ) -> None:
     """Project graph, plot water/parks/roads/gradient layers."""
+    crop_xlim, crop_ylim = get_crop_limits(g_proj, point, fig, compensated_dist)
+
+    # Truncate graph to the visible area before plotting — avoids rendering
+    # thousands of off-screen edges when the fetched radius exceeds the
+    # visible crop (e.g. warm-cached 20 km data for a 5 km render).
+    g_visible = _truncate_graph_to_bbox(g_proj, crop_xlim, crop_ylim)
+
     target_crs = g_proj.graph["crs"]
     _project_and_plot_layer(water, target_crs, ax, theme["water"], _ZORDER["water"], "water")
     _project_and_plot_layer(parks, target_crs, ax, theme["parks"], _ZORDER["parks"], "parks")
 
     _emit_status(status_reporter, "poster.roads", "Applying road hierarchy colors...")
-    edge_colors, edge_widths = get_edge_styles(g_proj, theme)
+    edge_colors, edge_widths = get_edge_styles(g_visible, theme)
 
-    crop_xlim, crop_ylim = get_crop_limits(g_proj, point, fig, compensated_dist)
     ox.plot_graph(
-        g_proj, ax=ax, bgcolor=theme['bg'],
+        g_visible, ax=ax, bgcolor=theme['bg'],
         node_size=0,
         edge_color=edge_colors,
         edge_linewidth=edge_widths,

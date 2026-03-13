@@ -618,6 +618,7 @@ def fetch_graph(
     point: tuple[float, float],
     dist: float,
     *,
+    try_radii: tuple[float, ...] = (),
     status_reporter: StatusReporter | None = None,
 ) -> MultiDiGraph | None:
     """
@@ -626,14 +627,27 @@ def fetch_graph(
     Uses caching to avoid redundant downloads. Fetches all network types
     within the specified distance from the center point.
 
-    Args:
-        point: (latitude, longitude) tuple for center point
-        dist: Distance in meters from center point
-
-    Returns:
-        MultiDiGraph of street network, or None if fetch fails
+    If ``try_radii`` is supplied, the cache is probed at those (larger)
+    radii first.  A hit at a larger radius is reused — the data is a
+    superset of what the smaller radius would return.
     """
     lat, lon = point
+    # Probe larger cached radii first (e.g. from cache-warming runs)
+    for r in try_radii:
+        if r > dist:
+            alt_key = f"graph_{lat}_{lon}_{r}"
+            try:
+                cached = cache_get(alt_key, default_ttl=_CACHE_TTL_DATA)
+            except CacheError:
+                cached = None
+            if cached is not None:
+                _emit_status(
+                    status_reporter, "graph.cache_hit",
+                    "\u2713 Using cached graph",
+                    distance=r,
+                )
+                return cached
+
     key = f"graph_{lat}_{lon}_{dist}"
     return _cached_fetch(
         key,
@@ -656,6 +670,7 @@ def fetch_features(
     tags: dict[str, Any],
     name: str,
     *,
+    try_radii: tuple[float, ...] = (),
     status_reporter: StatusReporter | None = None,
 ) -> GeoDataFrame | None:
     """
@@ -664,18 +679,29 @@ def fetch_features(
     Uses caching to avoid redundant downloads. Fetches features matching
     the specified OSM tags within distance from center point.
 
-    Args:
-        point: (latitude, longitude) tuple for center point
-        dist: Distance in meters from center point
-        tags: Dictionary of OSM tags to filter features
-        name: Name for this feature type (for caching and logging)
-
-    Returns:
-        GeoDataFrame of features, or None if fetch fails
+    If ``try_radii`` is supplied, the cache is probed at those (larger)
+    radii first.
     """
     lat, lon = point
     tag_parts = sorted(f"{k}={v}" for k, v in tags.items())
     tag_str = "_".join(tag_parts)
+
+    # Probe larger cached radii first
+    for r in try_radii:
+        if r > dist:
+            alt_key = f"{name}_{lat}_{lon}_{r}_{tag_str}"
+            try:
+                cached = cache_get(alt_key, default_ttl=_CACHE_TTL_DATA)
+            except CacheError:
+                cached = None
+            if cached is not None:
+                _emit_status(
+                    status_reporter, f"{name}.cache_hit",
+                    f"\u2713 Using cached {name}",
+                    distance=r,
+                )
+                return cached
+
     key = f"{name}_{lat}_{lon}_{dist}_{tag_str}"
     return _cached_fetch(
         key,
@@ -695,12 +721,22 @@ def _fetch_map_data(
     status_reporter: StatusReporter | None = None,
 ) -> tuple[MultiDiGraph, GeoDataFrame | None, GeoDataFrame | None, float]:
     """Fetch street network, water and park features in parallel."""
-    # Shrink the fetch radius so the map fills the poster's aspect ratio
-    # without excessive whitespace.  The divisor converts the full bounding
-    # box span to a half-extent suitable for the crop limits calculation.
-    _ASPECT_COMPENSATION_DIVISOR = 4
-    aspect_factor = min(max(height, width) / min(height, width), 4.0)
-    compensated_dist = dist * aspect_factor / _ASPECT_COMPENSATION_DIVISOR
+    # ``dist`` is the total extent along the poster's longest axis.
+    # Convert to a half-extent (radius) for the data fetch.
+    # ``get_crop_limits`` then crops the shorter axis proportionally
+    # to match the poster's aspect ratio.
+    half_dist = dist / 2.0
+
+    # Cold fetches use at least 10 km radius so one cache entry covers
+    # the full user slider range (2–10 km total extent).  Cache-warming
+    # scripts use 20 km radius for broader coverage; those larger entries
+    # are checked first via ``try_radii`` so user renders reuse them.
+    _MIN_FETCH_RADIUS = 10_000.0   # cold-fetch floor (10 km radius)
+    _WARM_FETCH_RADIUS = 20_000.0  # warm-cache radius to probe first
+    compensated_dist = max(half_dist, _MIN_FETCH_RADIUS)
+
+    # Probe the warm radius before doing a cold fetch
+    _try_radii = (_WARM_FETCH_RADIUS,) if _WARM_FETCH_RADIUS > compensated_dist else ()
 
     with tqdm(
         total=3,
@@ -711,7 +747,11 @@ def _fetch_map_data(
     ) as pbar:
 
         def _do_graph():
-            r = fetch_graph(point, compensated_dist, status_reporter=status_reporter)
+            r = fetch_graph(
+                point, compensated_dist,
+                try_radii=_try_radii,
+                status_reporter=status_reporter,
+            )
             return ("graph", r)
 
         def _do_water():
@@ -720,6 +760,7 @@ def _fetch_map_data(
                 compensated_dist,
                 tags={"natural": ["water", "bay", "strait"], "waterway": "riverbank"},
                 name="water",
+                try_radii=_try_radii,
                 status_reporter=status_reporter,
             )
             return ("water", r)
@@ -730,6 +771,7 @@ def _fetch_map_data(
                 compensated_dist,
                 tags={"leisure": "park", "landuse": "grass"},
                 name="parks",
+                try_radii=_try_radii,
                 status_reporter=status_reporter,
             )
             return ("parks", r)
@@ -780,7 +822,9 @@ def _fetch_map_data(
             nodes=g.number_of_nodes(),
         )
 
-    return g, water, parks, compensated_dist
+    # Return ``half_dist`` (the actual visible crop radius), NOT the
+    # fetch radius — the caller uses this for ``get_crop_limits``.
+    return g, water, parks, half_dist
 
 
 def _save_output(
@@ -1012,9 +1056,21 @@ def create_poster(
     )
     fig, ax = _setup_figure(width, height, theme)
     try:
-        g_proj = (
-            _projected_graph if _projected_graph is not None else ox.project_graph(g)
-        )
+        if _projected_graph is not None:
+            g_proj = _projected_graph
+        else:
+            # Cache the projected graph to avoid re-projecting on every render
+            proj_key = f"projected_{point[0]}_{point[1]}"
+            try:
+                g_proj = cache_get(proj_key, default_ttl=_CACHE_TTL_DATA)
+            except CacheError:
+                g_proj = None
+            if g_proj is None:
+                g_proj = ox.project_graph(g)
+                try:
+                    cache_set(proj_key, g_proj, ttl=_CACHE_TTL_DATA)
+                except CacheError:
+                    pass
 
         # 3. Render layers
         _render_layers(
@@ -1291,7 +1347,18 @@ def generate_posters(
         height,
         status_reporter=reporter,
     )
-    g_proj = ox.project_graph(prefetched_data[0])
+    # Cache the projected graph to skip the expensive CRS transform on repeat renders
+    proj_key = f"projected_{coords[0]}_{coords[1]}"
+    try:
+        g_proj = cache_get(proj_key, default_ttl=_CACHE_TTL_DATA)
+    except CacheError:
+        g_proj = None
+    if g_proj is None:
+        g_proj = ox.project_graph(prefetched_data[0])
+        try:
+            cache_set(proj_key, g_proj, ttl=_CACHE_TTL_DATA)
+        except CacheError:
+            pass
 
     outputs: list[str] = []
     failures: list[str] = []
