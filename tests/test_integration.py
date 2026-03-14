@@ -16,6 +16,8 @@ from conftest import build_synthetic_graph
 class TestIntegration:
     """Integration tests that exercise real matplotlib rendering."""
 
+    @patch("maptoart.core.cache_set")
+    @patch("maptoart.core.cache_get", return_value=None)
     @patch("maptoart.core.fetch_features", return_value=None)
     @patch("maptoart.core.fetch_graph")
     @patch("maptoart.core.get_coordinates", return_value=(48.8566, 2.3522))
@@ -24,6 +26,8 @@ class TestIntegration:
         mock_coords: MagicMock,
         mock_graph: MagicMock,
         mock_features: MagicMock,
+        mock_cache_get: MagicMock,
+        mock_cache_set: MagicMock,
         tmp_path: Path,
         sample_theme: dict[str, str],
         silent_reporter: core.StatusReporter,
@@ -46,12 +50,16 @@ class TestIntegration:
         header = result.read_bytes()[:4]
         assert header == b"\x89PNG", f"Invalid PNG header: {header!r}"
 
+    @patch("maptoart.core.cache_set")
+    @patch("maptoart.core.cache_get", return_value=None)
     @patch("maptoart.core.fetch_features", return_value=None)
     @patch("maptoart.core.fetch_graph")
     def test_create_poster_svg_output(
         self,
         mock_graph: MagicMock,
         mock_features: MagicMock,
+        mock_cache_get: MagicMock,
+        mock_cache_set: MagicMock,
         tmp_path: Path,
         sample_theme: dict[str, str],
         silent_reporter: core.StatusReporter,
@@ -73,12 +81,16 @@ class TestIntegration:
         content = result.read_text(encoding="utf-8")
         assert "<?xml" in content or "<svg" in content, "Not a valid SVG file"
 
+    @patch("maptoart.core.cache_set")
+    @patch("maptoart.core.cache_get", return_value=None)
     @patch("maptoart.core.fetch_features", return_value=None)
     @patch("maptoart.core.fetch_graph")
     def test_create_poster_pdf_output(
         self,
         mock_graph: MagicMock,
         mock_features: MagicMock,
+        mock_cache_get: MagicMock,
+        mock_cache_set: MagicMock,
         tmp_path: Path,
         sample_theme: dict[str, str],
         silent_reporter: core.StatusReporter,
@@ -100,12 +112,16 @@ class TestIntegration:
         header = result.read_bytes()[:5]
         assert header == b"%PDF-", f"Invalid PDF header: {header!r}"
 
+    @patch("maptoart.core.cache_set")
+    @patch("maptoart.core.cache_get", return_value=None)
     @patch("maptoart.core.fetch_features", return_value=None)
     @patch("maptoart.core.fetch_graph")
     def test_vector_format_dpi_capped(
         self,
         mock_graph: MagicMock,
         mock_features: MagicMock,
+        mock_cache_get: MagicMock,
+        mock_cache_set: MagicMock,
         tmp_path: Path,
         sample_theme: dict[str, str],
     ) -> None:
