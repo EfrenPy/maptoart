@@ -267,6 +267,8 @@ class TestGeneratePosters:
 
     @patch("maptoart.core._write_metadata", return_value="/tmp/out.json")
     @patch("maptoart.core.create_poster")
+    @patch("maptoart.core.cache_get", return_value=None)
+    @patch("maptoart.core.cache_set")
     @patch("maptoart.core.ox.project_graph")
     @patch("maptoart.core._fetch_map_data")
     @patch("maptoart.core._resolve_coordinates", return_value=(48.8566, 2.3522))
@@ -277,6 +279,8 @@ class TestGeneratePosters:
         mock_coords: MagicMock,
         mock_fetch: MagicMock,
         mock_project: MagicMock,
+        mock_cache_set: MagicMock,
+        mock_cache_get: MagicMock,
         mock_create: MagicMock,
         mock_meta: MagicMock,
         sample_theme_dir: Path,

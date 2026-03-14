@@ -1082,6 +1082,7 @@ def create_poster(
             water,
             parks,
             theme,
+            dpi=dpi,
             status_reporter=status_reporter,
         )
 

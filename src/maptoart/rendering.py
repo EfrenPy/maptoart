@@ -203,11 +203,14 @@ def _project_and_plot_layer(
     color: str,
     zorder: float,
     label: str,
+    *,
+    simplify_tolerance: float = 0.0,
 ) -> None:
     """Project polygon features to *target_crs* and plot them on *ax*.
 
     Filters for Polygon/MultiPolygon geometries, attempts osmnx projection
-    with a fallback to direct CRS transform, then plots.
+    with a fallback to direct CRS transform, optionally simplifies
+    geometries, then plots.
     """
     if gdf is None or gdf.empty:
         return
@@ -219,6 +222,11 @@ def _project_and_plot_layer(
     except (ValueError, RuntimeError):
         _logger.debug("osmnx projection failed for %s; falling back to to_crs", label)
         polys = polys.to_crs(target_crs)
+    if simplify_tolerance > 0:
+        polys = polys.copy()
+        polys["geometry"] = polys.geometry.simplify(
+            simplify_tolerance, preserve_topology=True,
+        )
     polys.plot(ax=ax, facecolor=color, edgecolor="none", zorder=zorder)
 
 
@@ -256,6 +264,11 @@ def _truncate_graph_to_bbox(
     return sub
 
 
+_PREVIEW_DPI_THRESHOLD = 200
+_PREVIEW_SIMPLIFY_TOLERANCE = 50  # metres in projected CRS
+_PREVIEW_MIN_ROAD_WIDTH = 0.5  # skip roads thinner than this
+
+
 def _render_layers(
     ax: Any,
     g_proj: MultiDiGraph,
@@ -266,6 +279,7 @@ def _render_layers(
     parks: GeoDataFrame | None,
     theme: dict[str, str],
     *,
+    dpi: int = 300,
     status_reporter: StatusReporter | None = None,
 ) -> None:
     """Project graph, plot water/parks/roads/gradient layers."""
@@ -276,12 +290,45 @@ def _render_layers(
     # visible crop (e.g. warm-cached 20 km data for a 5 km render).
     g_visible = _truncate_graph_to_bbox(g_proj, crop_xlim, crop_ylim)
 
+    is_preview = dpi < _PREVIEW_DPI_THRESHOLD
+    simplify_tol = _PREVIEW_SIMPLIFY_TOLERANCE if is_preview else 0.0
+
     target_crs = g_proj.graph["crs"]
-    _project_and_plot_layer(water, target_crs, ax, theme["water"], _ZORDER["water"], "water")
-    _project_and_plot_layer(parks, target_crs, ax, theme["parks"], _ZORDER["parks"], "parks")
+    _project_and_plot_layer(
+        water, target_crs, ax, theme["water"], _ZORDER["water"], "water",
+        simplify_tolerance=simplify_tol,
+    )
+    _project_and_plot_layer(
+        parks, target_crs, ax, theme["parks"], _ZORDER["parks"], "parks",
+        simplify_tolerance=simplify_tol,
+    )
 
     _emit_status(status_reporter, "poster.roads", "Applying road hierarchy colors...")
     edge_colors, edge_widths = get_edge_styles(g_visible, theme)
+
+    # For preview renders, skip minor roads (residential/unclassified) that
+    # are invisible at low DPI.  This cuts 60-70% of edges for dense cities.
+    if is_preview:
+        filtered = [
+            (c, w) for c, w in zip(edge_colors, edge_widths)
+            if w >= _PREVIEW_MIN_ROAD_WIDTH
+        ]
+        if filtered:
+            edge_colors, edge_widths = zip(*filtered)  # type: ignore[assignment]
+            edge_colors = list(edge_colors)
+            edge_widths = list(edge_widths)
+
+            # Rebuild a subgraph with only the kept edges
+            edges_to_keep = [
+                (u, v, k) for (u, v, k), w in zip(
+                    g_visible.edges(keys=True), get_edge_styles(g_visible, theme)[1],
+                )
+                if w >= _PREVIEW_MIN_ROAD_WIDTH
+            ]
+            g_filtered = g_visible.edge_subgraph(edges_to_keep).copy()
+            g_filtered.graph.update(g_visible.graph)
+            g_visible = g_filtered
+            edge_colors, edge_widths = get_edge_styles(g_visible, theme)
 
     ox.plot_graph(
         g_visible, ax=ax, bgcolor=theme['bg'],
