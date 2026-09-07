@@ -497,12 +497,24 @@ footer rather than as a watermark over the map:
   not hang off `--no-attribution`.
 - **Bottom left:** `© OpenStreetMap contributors`, hidden by `--no-attribution`.
 
-**The ODbL attribution is written into the file's metadata on every render**,
-whether or not the line is printed on the face. PNG gets `Copyright` and `Source`
-tEXt chunks, PDF the `Subject` field, SVG a `Description`. This is what lets a
-poster be sold with a clean face while still carrying its attribution: the credit
-survives the file being forwarded, re-uploaded, or separated from the page it was
-bought on. Check it with `PIL.Image.open(path).text` or `exiftool`.
+**Every render writes two different things into the file's metadata**, whether or
+not the OSM line is printed on the face:
+
+| Field (PNG) | Holds |
+|---|---|
+| `Copyright`, `Author` | the brand — the poster is a Produced Work, and its design, type, palette and framing are yours |
+| `Attribution`, `Source` | OpenStreetMap — where the *data* came from |
+| `Description` | `<city> — Powered by OpenStreetMap.` |
+
+Keeping them apart matters: a single field holding only the OSM line left the
+poster with no apparent owner and credited OpenStreetMap with a work that is not
+theirs. The ODbL lets a Produced Work carry its own terms as long as the data is
+attributed.
+
+PDF maps these onto `Author`/`Subject`/`Keywords` and SVG onto
+`Creator`/`Description`, since neither takes free-form keys. Override the brand
+with `MAPTOART_BRAND_NAME` and `MAPTOART_BRAND_URL`; the year comes from the
+render date. Check it with `PIL.Image.open(path).text` or `exiftool`.
 
 Hiding the printed line therefore does not drop the attribution — but if you also
 strip the metadata, it does. The licence requires attributing a Produced Work that

@@ -931,36 +931,63 @@ def _save_output(
     )
 
 
+# Quien firma la obra. El poster es una Produced Work: el diseno, la
+# tipografia, la paleta y el encuadre son nuestros, y la ODbL permite
+# licenciarlo bajo condiciones propias mientras se atribuyan los datos.
+_BRAND_NAME = os.environ.get("MAPTOART_BRAND_NAME", "MapToArt")
+_BRAND_URL = os.environ.get("MAPTOART_BRAND_URL", "https://maptoart.com")
+
+# De donde salen los datos. Va SEPARADO del copyright a proposito: mezclarlos
+# en un solo campo dejaba el poster sin dueno aparente y atribuia a OSM una obra
+# que no es suya.
 _OSM_ATTRIBUTION = (
     "Map data \u00a9 OpenStreetMap contributors, licensed under the Open Database "
     "License (ODbL). https://www.openstreetmap.org/copyright"
 )
+_POWERED_BY = "Powered by OpenStreetMap"
 
 
 def _attribution_metadata(fmt: str, city: str | None, country: str | None) -> dict[str, str]:
-    """Metadatos con la atribucion, en las claves que entiende cada formato.
+    """Metadatos del fichero: quien firma la obra y de donde salen los datos.
+
+    Dos cosas distintas en campos distintos:
+      - Copyright / Author -> la marca, que es quien hace el poster.
+      - Attribution / Source -> OpenStreetMap, que es de donde vienen los datos.
 
     matplotlib escribe estos pares como trozos tEXt en PNG, como diccionario Info
     en PDF y como elementos de cabecera en SVG, asi que las claves no son
     intercambiables entre formatos.
     """
     title = ", ".join(part for part in (city or "", country or "") if part)
+    year = datetime.now(UTC).year
+    copyright_line = f"\u00a9 {year} {_BRAND_NAME} \u00b7 {_BRAND_URL}"
+    description = f"{title} \u2014 {_POWERED_BY}." if title else f"{_POWERED_BY}."
+
     if fmt == "pdf":
         return {
             "Title": title,
-            "Subject": _OSM_ATTRIBUTION,
-            "Creator": "MapToArt",
-            "Keywords": "OpenStreetMap, ODbL, map poster",
+            "Author": _BRAND_NAME,
+            "Subject": f"{description} {_OSM_ATTRIBUTION}",
+            "Creator": _BRAND_NAME,
+            "Keywords": f"{copyright_line}; {_OSM_ATTRIBUTION}",
         }
     if fmt == "svg":
-        return {"Title": title, "Description": _OSM_ATTRIBUTION, "Creator": "MapToArt"}
-    # PNG: claves tEXt libres; Copyright y Source son las que leen los visores.
+        # SVG solo admite estas tres; el copyright va delante para que no se
+        # pierda si un visor recorta la descripcion.
+        return {
+            "Title": title,
+            "Creator": _BRAND_NAME,
+            "Description": f"{copyright_line}. {description} {_OSM_ATTRIBUTION}",
+        }
+    # PNG: las palabras clave tEXt son libres, asi que cada cosa va en la suya.
     return {
         "Title": title,
-        "Author": "MapToArt",
-        "Copyright": _OSM_ATTRIBUTION,
+        "Author": _BRAND_NAME,
+        "Copyright": copyright_line,
+        "Description": description,
+        "Attribution": _OSM_ATTRIBUTION,
         "Source": "https://www.openstreetmap.org/copyright",
-        "Software": "MapToArt",
+        "Software": _BRAND_NAME,
     }
 
 
