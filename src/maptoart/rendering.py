@@ -427,7 +427,9 @@ def _draw_brand_mark(ax, theme: dict[str, str], font_attr, size_pt: float, scale
         zorder=_ZORDER["text"], clip_on=False,
     )
     ax.text(
-        0.98, 0.02, "MAPTOART",
+        # "MapToArt", no "MAPTOART": es el nombre de la marca tal cual se
+        # escribe, y en versalitas sobre un poster se lee como un grito.
+        0.98, 0.02, "MapToArt",
         transform=anchored(-(2 * _PIN_HALF_W * pin_pt + 0.30 * size_pt), 0),
         color=colour, alpha=0.5,
         ha="right", va="baseline", fontproperties=font_attr, zorder=_ZORDER["text"],

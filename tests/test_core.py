@@ -1126,7 +1126,7 @@ class TestApplyTypography:
         assert ax.text.call_count == 4
         texts = [c[0][2] for c in ax.text.call_args_list]
         assert not any("OpenStreetMap" in t for t in texts)
-        assert "MAPTOART" in texts
+        assert "MapToArt" in texts
 
 
 class TestRenderLayers:
