@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Poster footer now carries the MapToArt pin and wordmark, bottom left, mirroring
+  the OpenStreetMap attribution: same theme colour, same opacity, same size. Drawn
+  as a vector path rather than an image so it adapts to every theme, and
+  simplified because the logo's inner street grid is illegible at a few
+  millimetres. `--no-attribution` hides both marks.
+- Overpass mirror support, by environment variable: `MAPTOART_OVERPASS_URL` points
+  osmnx at another endpoint and disables its rate limiting (mirrors don't
+  implement the main instance's slot protocol, so osmnx would poll `/status`
+  forever), and `MAPTOART_OVERPASS_TIMEOUT` raises the 180 s default for slow
+  public mirrors. Needed because `overpass-api.de` blocks Google Cloud IP ranges,
+  so the Cloud Run renderer cannot use it. **This had been running in production
+  for months as an uncommitted local change**; it is recorded here now.
+
+### Note on version history
+Entries for 0.5.3 and 0.5.4 were never written, though the package version was
+bumped. This file resumes with the changes above rather than reconstructing them
+after the fact.
+
 ## [0.5.2] - 2026-03-11
 
 ### Performance

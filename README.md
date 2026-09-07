@@ -220,7 +220,7 @@ For immutable builds, run `uv build` or `pip install .` to produce/install a whe
 | **OPTIONAL:** `--paper-size` | `-p` | Paper size preset: A0, A1, A2, A3, A4 (overrides width/height) | |
 | **OPTIONAL:** `--orientation` | `-o` | Paper orientation: portrait, landscape | portrait |
 | **OPTIONAL:** `--dpi` | | Output DPI (auto-reduced if memory would exceed 2 GB) | 300 |
-| **OPTIONAL:** `--no-attribution` | | Hide the OpenStreetMap attribution text | |
+| **OPTIONAL:** `--no-attribution` | | Hide the footer: the OpenStreetMap attribution *and* the MapToArt mark (see [Poster Footer](#poster-footer)) | |
 | **OPTIONAL:** `--format` | `-f` | Output format: png, svg, pdf | png |
 | **OPTIONAL:** `--parallel-themes` | | Render multiple themes in parallel (multiprocessing) | off |
 | **OPTIONAL:** `--batch` | | CSV or JSON file for batch poster generation | |
@@ -447,6 +447,33 @@ maptoart-cli --cache-info
 maptoart-cli --cache-clear
 ```
 
+### Overpass Mirrors
+
+The default Overpass instance (`overpass-api.de`) blocks Google Cloud IP ranges
+outright, so any deployment on GCP needs a mirror. Three environment variables
+control this:
+
+| Variable | Purpose |
+|----------|---------|
+| `MAPTOART_OVERPASS_URL` | Point osmnx at a different endpoint. Ends in `/api` — osmnx appends `/interpreter` itself. |
+| `MAPTOART_OVERPASS_TIMEOUT` | Raise osmnx's 180 s default. Public mirrors are slow on heavy queries such as coastal water polygons. |
+| `MAPTOART_OSM_CACHE_DIR` | Where the OSM/HTTP cache lives (also honours `CACHE_DIR`). |
+
+Setting `MAPTOART_OVERPASS_URL` **also disables osmnx's rate limiting**. Mirrors
+do not implement the main instance's slot/status protocol, so with rate limiting
+on, osmnx polls `/status` and can wait forever; mirrors expect the client to just
+send the query.
+
+```bash
+MAPTOART_OVERPASS_URL=https://overpass.kumi.systems/api \
+MAPTOART_OVERPASS_TIMEOUT=600 \
+  maptoart-cli --city Paris --country France --distance 7000
+```
+
+Mirrors are not interchangeable by geography: `maps.mail.ru` answers from Google
+Cloud but returns **403 from Spanish consumer connections**, so the mirror that
+works on the server may not be the one that works on a laptop.
+
 ### Auto DPI Reduction
 
 If the requested DPI would cause memory usage to exceed 2 GB, the DPI is automatically reduced to the highest safe value (minimum 72). A warning is emitted when this occurs.
@@ -458,6 +485,36 @@ If the requested DPI would cause memory usage to exceed 2 GB, the DPI is automat
 | 4000-6000m | Small/dense cities (Venice, Amsterdam center) |
 | 8000-12000m | Medium cities, focused downtown (Paris, Barcelona) |
 | 15000-20000m | Large metros, full city view (Tokyo, Mumbai) |
+
+### Poster Footer
+
+Every poster carries two marks along the bottom edge, both drawn in the theme's
+text colour at 50 % opacity and in the same size as each other, so they read as a
+footer rather than as a watermark over the map:
+
+- **Bottom right:** `© OpenStreetMap contributors`. This one is not optional in
+  spirit — the ODbL licence requires attributing the data.
+- **Bottom left:** the MapToArt pin and wordmark.
+
+The pin is drawn as a vector path, not as an image file, for two reasons. It
+takes the theme's colour, so it works on the black of `noir` and on the cream of
+`pastel_dream` without pasting a coloured rectangle onto the map; and it is
+measured in typographic points, so it scales with the poster like the type does.
+It is also a *simplified* silhouette: the full logo carries a street grid inside
+the pin, which at a few millimetres on the printed poster is an illegible smudge.
+
+Two implementation notes, both of which cost a couple of attempts:
+
+- matplotlib does **not** draw a custom marker with the coordinates as given: it
+  rescales the path by `0.5 / max(|vertex|)` to fit `markersize`. Two paths with
+  different extents therefore get different scales, so a dot defined as a
+  separate path drifts out of the pin even when the coordinates line up on paper.
+  The measurements are derived from the path itself so they cannot desynchronise.
+- Placement is in typographic points, not axes fractions. A fraction offset
+  stretches with the poster's aspect ratio: the same number spaces differently on
+  a 2:3 than on a square.
+
+`--no-attribution` hides both.
 
 ## Themes
 
