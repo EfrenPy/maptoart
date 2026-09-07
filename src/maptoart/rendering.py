@@ -11,6 +11,8 @@ import numpy as np
 import osmnx as ox
 from geopandas import GeoDataFrame
 from matplotlib.font_manager import FontProperties
+from matplotlib.path import Path as _MplPath
+from matplotlib.transforms import ScaledTranslation as _ScaledTranslation
 from networkx import MultiDiGraph
 from shapely.geometry import Point
 
@@ -32,6 +34,44 @@ _BASE_FONT_CITY = 60
 _BASE_FONT_COUNTRY = 22
 _BASE_FONT_COORDS = 14
 _BASE_FONT_ATTR = 8
+
+# Silueta simplificada del pin de MapToArt, normalizada alrededor del origen.
+#
+# El logo real lleva una trama de calles dentro del pin. A este tamano -unos
+# milimetros en el poster impreso- ese detalle es una mancha ilegible, asi que
+# se reduce a lo que si se reconoce: la gota y el punto. Se dibuja como marcador
+# de matplotlib (no como imagen) por dos razones: se mide en puntos, igual que
+# la tipografia, asi que escala sola con el poster; y toma el color del tema, de
+# modo que funciona sobre el fondo negro del noir y sobre el crema del pastel
+# sin pegar un rectangulo de color encima del mapa.
+_BRAND_PIN = _MplPath(
+    [
+        (0.00, -0.62),
+        (-0.30, -0.10), (-0.44, 0.06), (-0.44, 0.28),
+        (-0.44, 0.53), (-0.24, 0.72), (0.00, 0.72),
+        (0.24, 0.72), (0.44, 0.53), (0.44, 0.28),
+        (0.44, 0.06), (0.30, -0.10), (0.00, -0.62),
+        (0.00, -0.62),
+    ],
+    [
+        _MplPath.MOVETO,
+        _MplPath.CURVE4, _MplPath.CURVE4, _MplPath.CURVE4,
+        _MplPath.CURVE4, _MplPath.CURVE4, _MplPath.CURVE4,
+        _MplPath.CURVE4, _MplPath.CURVE4, _MplPath.CURVE4,
+        _MplPath.CURVE4, _MplPath.CURVE4, _MplPath.CURVE4,
+        _MplPath.CLOSEPOLY,
+    ],
+)
+# matplotlib NO dibuja un marcador con las coordenadas tal cual: lo reescala por
+# 0.5 / max(|vertice|) para que quepa en markersize. Dos paths con extensiones
+# distintas reciben escalas distintas, asi que un punto definido aparte se
+# descoloca respecto al pin por mucho que las coordenadas "encajen" sobre el
+# papel. Estas medidas se derivan del path para que no puedan desincronizarse.
+_PIN_SCALE = 0.5 / float(np.abs(_BRAND_PIN.vertices).max())
+_PIN_TIP_DY = 0.62 * _PIN_SCALE    # del centro del marcador a la punta
+_PIN_HALF_W = 0.44 * _PIN_SCALE    # media anchura
+_PIN_DOT_DY = 0.28 * _PIN_SCALE    # altura del centro de la cabeza
+_PIN_DOT_D = 2 * 0.145 * _PIN_SCALE  # diametro del punto interior
 
 # Vertical positions (fraction of axes height)
 _POS_CITY_Y = 0.14
@@ -346,6 +386,50 @@ def _render_layers(
     create_gradient_fade(ax, theme['gradient_color'], location='top', zorder=_ZORDER["gradient"])
 
 
+def _draw_brand_mark(ax, theme: dict[str, str], font_attr, size_pt: float, scale: float) -> None:
+    """Sello de MapToArt abajo a la izquierda, espejo de la atribucion de OSM.
+
+    Mismo color, misma opacidad y mismo cuerpo que la linea de OpenStreetMap:
+    se lee como un pie de pagina discreto, no como una marca de agua sobre el
+    mapa.
+
+    Todo se coloca con desplazamientos en PUNTOS tipograficos, no en fracciones
+    del eje. Un offset en fracciones se estira con la proporcion del poster: el
+    mismo numero separa distinto en un 2x3 que en un cuadrado.
+    """
+    colour = theme["text"]
+    fig = ax.figure
+    pin_pt = size_pt * 1.15
+
+    def anchored(dx_pt: float, dy_pt: float):
+        return ax.transAxes + _ScaledTranslation(dx_pt / 72.0, dy_pt / 72.0, fig.dpi_scale_trans)
+
+    # Pin perfilado, con la punta apoyada en la linea base del texto.
+    pin_tr = anchored(_PIN_HALF_W * pin_pt, _PIN_TIP_DY * pin_pt)
+    ax.plot(
+        [0.02], [0.02], transform=pin_tr, linestyle="none",
+        marker=_BRAND_PIN, markersize=pin_pt,
+        markerfacecolor="none", markeredgecolor=colour,
+        markeredgewidth=max(0.4, 0.8 * scale), alpha=0.5,
+        zorder=_ZORDER["text"], clip_on=False,
+    )
+    # Punto interior: circulo normal desplazado a la cabeza del pin, con el
+    # tamano ya convertido a puntos. Definirlo como path aparte lo descolocaba.
+    ax.plot(
+        [0.02], [0.02],
+        transform=anchored(_PIN_HALF_W * pin_pt, (_PIN_TIP_DY + _PIN_DOT_DY) * pin_pt),
+        linestyle="none", marker="o", markersize=_PIN_DOT_D * pin_pt,
+        markerfacecolor=colour, markeredgecolor="none", alpha=0.5,
+        zorder=_ZORDER["text"], clip_on=False,
+    )
+    ax.text(
+        0.02, 0.02, "MAPTOART",
+        transform=anchored(2 * _PIN_HALF_W * pin_pt + 0.28 * size_pt, 0),
+        color=colour, alpha=0.5,
+        ha="left", va="baseline", fontproperties=font_attr, zorder=_ZORDER["text"],
+    )
+
+
 def _apply_typography(
     fig: Any,
     ax: Any,
@@ -429,3 +513,4 @@ def _apply_typography(
             transform=ax.transAxes, color=theme["text"], alpha=0.5,
             ha="right", va="bottom", fontproperties=font_attr, zorder=_ZORDER["text"],
         )
+        _draw_brand_mark(ax, theme, font_attr, base_attr * scale_factor, scale_factor)
