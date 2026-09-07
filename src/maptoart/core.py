@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Any, Sequence, TypeVar, cast
 
 import matplotlib
+
 matplotlib.use("Agg")  # headless backend — avoids GUI overhead on servers
 import matplotlib.pyplot as plt
 import osmnx as ox
@@ -58,6 +59,22 @@ _osmnx_cache_dir = os.environ.get("MAPTOART_OSM_CACHE_DIR") or os.environ.get(
     "CACHE_DIR", "cache"
 )
 ox.settings.cache_folder = os.path.join(_osmnx_cache_dir, "osmnx_http")
+# Alternate Overpass endpoint (e.g. a mirror when overpass-api.de throttles this IP)
+_overpass_url = os.environ.get("MAPTOART_OVERPASS_URL")
+if _overpass_url:
+    ox.settings.overpass_url = _overpass_url
+    # Mirrors don't implement the main instance's slot/status protocol; with
+    # rate limiting on, osmnx polls /status and can wait forever. Mirrors like
+    # kumi.systems expect clients to just send the query.
+    ox.settings.overpass_rate_limit = False
+# Public mirrors can be slow for heavy queries (coastal water polygons):
+# allow a longer Overpass/HTTP timeout than osmnx's 180 s default.
+_overpass_timeout = os.environ.get("MAPTOART_OVERPASS_TIMEOUT")
+if _overpass_timeout:
+    try:
+        ox.settings.requests_timeout = max(30, int(_overpass_timeout))
+    except ValueError:
+        pass
 from geopandas import GeoDataFrame
 from networkx import MultiDiGraph
 
@@ -642,7 +659,8 @@ def fetch_graph(
                 cached = None
             if cached is not None:
                 _emit_status(
-                    status_reporter, "graph.cache_hit",
+                    status_reporter,
+                    "graph.cache_hit",
                     "\u2713 Using cached graph",
                     distance=r,
                 )
@@ -696,7 +714,8 @@ def fetch_features(
                 cached = None
             if cached is not None:
                 _emit_status(
-                    status_reporter, f"{name}.cache_hit",
+                    status_reporter,
+                    f"{name}.cache_hit",
                     f"\u2713 Using cached {name}",
                     distance=r,
                 )
@@ -731,7 +750,7 @@ def _fetch_map_data(
     # the full user slider range (2–10 km total extent).  Cache-warming
     # scripts use 20 km radius for broader coverage; those larger entries
     # are checked first via ``try_radii`` so user renders reuse them.
-    _MIN_FETCH_RADIUS = 10_000.0   # cold-fetch floor (10 km radius)
+    _MIN_FETCH_RADIUS = 10_000.0  # cold-fetch floor (10 km radius)
     _WARM_FETCH_RADIUS = 20_000.0  # warm-cache radius to probe first
     compensated_dist = max(half_dist, _MIN_FETCH_RADIUS)
 
@@ -748,7 +767,8 @@ def _fetch_map_data(
 
         def _do_graph():
             r = fetch_graph(
-                point, compensated_dist,
+                point,
+                compensated_dist,
                 try_radii=_try_radii,
                 status_reporter=status_reporter,
             )
