@@ -387,11 +387,15 @@ def _render_layers(
 
 
 def _draw_brand_mark(ax, theme: dict[str, str], font_attr, size_pt: float, scale: float) -> None:
-    """Sello de MapToArt abajo a la izquierda, espejo de la atribucion de OSM.
+    """Sello de MapToArt abajo a la DERECHA, pegado al borde.
 
-    Mismo color, misma opacidad y mismo cuerpo que la linea de OpenStreetMap:
-    se lee como un pie de pagina discreto, no como una marca de agua sobre el
-    mapa.
+    Se dibuja SIEMPRE, tambien en las previsualizaciones: identifica el poster
+    venga de donde venga. La atribucion de OpenStreetMap, en cambio, cuelga de
+    show_attribution y vive en la esquina opuesta.
+
+    El pin va en el extremo y el nombre a su izquierda, para que el bloque se
+    pegue al borde igual que la linea de OSM se pega al suyo. Asi no hace falta
+    medir el ancho del texto en tiempo de dibujado: ambos se anclan a su borde.
 
     Todo se coloca con desplazamientos en PUNTOS tipograficos, no en fracciones
     del eje. Un offset en fracciones se estira con la proporcion del poster: el
@@ -404,10 +408,10 @@ def _draw_brand_mark(ax, theme: dict[str, str], font_attr, size_pt: float, scale
     def anchored(dx_pt: float, dy_pt: float):
         return ax.transAxes + _ScaledTranslation(dx_pt / 72.0, dy_pt / 72.0, fig.dpi_scale_trans)
 
-    # Pin perfilado, con la punta apoyada en la linea base del texto.
-    pin_tr = anchored(_PIN_HALF_W * pin_pt, _PIN_TIP_DY * pin_pt)
+    # Pin perfilado en el extremo derecho, con la punta en la linea base.
+    pin_tr = anchored(-_PIN_HALF_W * pin_pt, _PIN_TIP_DY * pin_pt)
     ax.plot(
-        [0.02], [0.02], transform=pin_tr, linestyle="none",
+        [0.98], [0.02], transform=pin_tr, linestyle="none",
         marker=_BRAND_PIN, markersize=pin_pt,
         markerfacecolor="none", markeredgecolor=colour,
         markeredgewidth=max(0.4, 0.8 * scale), alpha=0.5,
@@ -416,17 +420,17 @@ def _draw_brand_mark(ax, theme: dict[str, str], font_attr, size_pt: float, scale
     # Punto interior: circulo normal desplazado a la cabeza del pin, con el
     # tamano ya convertido a puntos. Definirlo como path aparte lo descolocaba.
     ax.plot(
-        [0.02], [0.02],
-        transform=anchored(_PIN_HALF_W * pin_pt, (_PIN_TIP_DY + _PIN_DOT_DY) * pin_pt),
+        [0.98], [0.02],
+        transform=anchored(-_PIN_HALF_W * pin_pt, (_PIN_TIP_DY + _PIN_DOT_DY) * pin_pt),
         linestyle="none", marker="o", markersize=_PIN_DOT_D * pin_pt,
         markerfacecolor=colour, markeredgecolor="none", alpha=0.5,
         zorder=_ZORDER["text"], clip_on=False,
     )
     ax.text(
-        0.02, 0.02, "MAPTOART",
-        transform=anchored(2 * _PIN_HALF_W * pin_pt + 0.28 * size_pt, 0),
+        0.98, 0.02, "MAPTOART",
+        transform=anchored(-(2 * _PIN_HALF_W * pin_pt + 0.30 * size_pt), 0),
         color=colour, alpha=0.5,
-        ha="left", va="baseline", fontproperties=font_attr, zorder=_ZORDER["text"],
+        ha="right", va="baseline", fontproperties=font_attr, zorder=_ZORDER["text"],
     )
 
 
@@ -507,10 +511,14 @@ def _apply_typography(
         linewidth=1 * scale_factor, zorder=_ZORDER["text"],
     )
 
+    # El sello de MapToArt va siempre, tambien en previsualizacion: identifica
+    # el poster venga de donde venga. La atribucion de OSM es la que se puede
+    # ocultar, y vive en la esquina opuesta.
+    _draw_brand_mark(ax, theme, font_attr, base_attr * scale_factor, scale_factor)
+
     if show_attribution:
         ax.text(
-            0.98, 0.02, "\u00a9 OpenStreetMap contributors",
+            0.02, 0.02, "\u00a9 OpenStreetMap contributors",
             transform=ax.transAxes, color=theme["text"], alpha=0.5,
-            ha="right", va="bottom", fontproperties=font_attr, zorder=_ZORDER["text"],
+            ha="left", va="bottom", fontproperties=font_attr, zorder=_ZORDER["text"],
         )
-        _draw_brand_mark(ax, theme, font_attr, base_attr * scale_factor, scale_factor)

@@ -1120,8 +1120,13 @@ class TestApplyTypography:
             theme, None, 12, 16,
             show_attribution=False,
         )
-        # city, country, coordinates = 3 text calls, no attribution
-        assert ax.text.call_count == 3
+        # city, country, coordinates + the MapToArt mark = 4 text calls.
+        # The brand mark is drawn even with show_attribution=False: it identifies
+        # the poster wherever it came from. What the flag hides is the OSM line.
+        assert ax.text.call_count == 4
+        texts = [c[0][2] for c in ax.text.call_args_list]
+        assert not any("OpenStreetMap" in t for t in texts)
+        assert "MAPTOART" in texts
 
 
 class TestRenderLayers:
@@ -2776,11 +2781,13 @@ class TestAttributionFontFallback:
                 theme, None, 14.0, 11.0, show_attribution=True,
             )
 
-        # Check that ax.text was called for attribution (last text call)
+        # La atribucion de OSM vive abajo a la IZQUIERDA (x=0.02); el sello de
+        # MapToArt ocupa la derecha. Buscarla por posicion sin mas encontraria el
+        # sello, que usa la misma fuente y pasaria la asercion por casualidad.
         text_calls = ax.text.call_args_list
-        # Attribution is the last text call (at position 0.98, 0.02)
-        attr_call = [c for c in text_calls if c[0][0] == 0.98]
+        attr_call = [c for c in text_calls if "OpenStreetMap" in c[0][2]]
         assert len(attr_call) == 1
+        assert attr_call[0][0][0] == 0.02
         font_prop = attr_call[0][1]["fontproperties"]
         assert font_prop.get_family() == ["monospace"]
 

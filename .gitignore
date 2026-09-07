@@ -33,3 +33,12 @@ test_venv/
 htmlcov/
 .coverage
 .pytest_cache/
+
+# Artefactos que cloudrun/deploy.sh (del repo maptoposterpage) copia aqui en
+# cada despliegue: el contexto del build es ESTE arbol, no aquel. Se regeneran
+# solos, asi que aparecerian como sin versionar para siempre y alguien acabaria
+# commiteandolos por error.
+Dockerfile.cloudrun
+cloudrun_server.py
+cloudrun_requirements.txt
+.gcloudignore

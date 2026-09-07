@@ -220,7 +220,7 @@ For immutable builds, run `uv build` or `pip install .` to produce/install a whe
 | **OPTIONAL:** `--paper-size` | `-p` | Paper size preset: A0, A1, A2, A3, A4 (overrides width/height) | |
 | **OPTIONAL:** `--orientation` | `-o` | Paper orientation: portrait, landscape | portrait |
 | **OPTIONAL:** `--dpi` | | Output DPI (auto-reduced if memory would exceed 2 GB) | 300 |
-| **OPTIONAL:** `--no-attribution` | | Hide the footer: the OpenStreetMap attribution *and* the MapToArt mark (see [Poster Footer](#poster-footer)) | |
+| **OPTIONAL:** `--no-attribution` | | Hide the OpenStreetMap attribution (bottom left). The MapToArt mark is always drawn — see [Poster Footer](#poster-footer) | |
 | **OPTIONAL:** `--format` | `-f` | Output format: png, svg, pdf | png |
 | **OPTIONAL:** `--parallel-themes` | | Render multiple themes in parallel (multiprocessing) | off |
 | **OPTIONAL:** `--batch` | | CSV or JSON file for batch poster generation | |
@@ -492,9 +492,13 @@ Every poster carries two marks along the bottom edge, both drawn in the theme's
 text colour at 50 % opacity and in the same size as each other, so they read as a
 footer rather than as a watermark over the map:
 
-- **Bottom right:** `© OpenStreetMap contributors`. This one is not optional in
-  spirit — the ODbL licence requires attributing the data.
-- **Bottom left:** the MapToArt pin and wordmark.
+- **Bottom right:** the MapToArt wordmark and pin. Drawn on **every** poster,
+  previews included: it identifies the poster wherever it came from, so it does
+  not hang off `--no-attribution`.
+- **Bottom left:** `© OpenStreetMap contributors`, hidden by `--no-attribution`.
+  Bear in mind what that flag turns off: the ODbL licence requires attributing
+  the data on a Produced Work that is distributed publicly, so a poster that is
+  sold or printed is precisely where it is needed.
 
 The pin is drawn as a vector path, not as an image file, for two reasons. It
 takes the theme's colour, so it works on the black of `noir` and on the cream of
@@ -514,7 +518,7 @@ Two implementation notes, both of which cost a couple of attempts:
   stretches with the poster's aspect ratio: the same number spaces differently on
   a 2:3 than on a square.
 
-`--no-attribution` hides both.
+`--no-attribution` hides only the OpenStreetMap line; the MapToArt mark stays.
 
 ## Themes
 

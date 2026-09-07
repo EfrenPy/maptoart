@@ -8,11 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Poster footer now carries the MapToArt pin and wordmark, bottom left, mirroring
-  the OpenStreetMap attribution: same theme colour, same opacity, same size. Drawn
-  as a vector path rather than an image so it adapts to every theme, and
-  simplified because the logo's inner street grid is illegible at a few
-  millimetres. `--no-attribution` hides both marks.
+- Poster footer now carries the MapToArt wordmark and pin, **bottom right**, with
+  the OpenStreetMap attribution moved to the bottom left. Same theme colour, same
+  opacity, same size, so the two read as one footer. Drawn as a vector path rather
+  than an image so it adapts to every theme, and simplified because the logo's
+  inner street grid is illegible at a few millimetres.
+
+### Changed
+- The MapToArt mark is drawn on **every** poster, previews included, and no longer
+  hangs off `--no-attribution`. That flag now controls only the OpenStreetMap line.
 - Overpass mirror support, by environment variable: `MAPTOART_OVERPASS_URL` points
   osmnx at another endpoint and disables its rate limiting (mirrors don't
   implement the main instance's slot protocol, so osmnx would poll `/status`
