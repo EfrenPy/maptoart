@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than an image so it adapts to every theme, and simplified because the logo's
   inner street grid is illegible at a few millimetres.
 
+- The ODbL attribution is now written into every rendered file's metadata (PNG
+  `Copyright`/`Source` tEXt chunks, PDF `Subject`, SVG `Description`), regardless
+  of whether the line is printed on the poster's face. It travels with the file
+  when it is forwarded or re-uploaded.
+
 ### Changed
 - The MapToArt mark is drawn on **every** poster, previews included, and no longer
   hangs off `--no-attribution`. That flag now controls only the OpenStreetMap line.

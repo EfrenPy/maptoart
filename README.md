@@ -496,9 +496,17 @@ footer rather than as a watermark over the map:
   previews included: it identifies the poster wherever it came from, so it does
   not hang off `--no-attribution`.
 - **Bottom left:** `© OpenStreetMap contributors`, hidden by `--no-attribution`.
-  Bear in mind what that flag turns off: the ODbL licence requires attributing
-  the data on a Produced Work that is distributed publicly, so a poster that is
-  sold or printed is precisely where it is needed.
+
+**The ODbL attribution is written into the file's metadata on every render**,
+whether or not the line is printed on the face. PNG gets `Copyright` and `Source`
+tEXt chunks, PDF the `Subject` field, SVG a `Description`. This is what lets a
+poster be sold with a clean face while still carrying its attribution: the credit
+survives the file being forwarded, re-uploaded, or separated from the page it was
+bought on. Check it with `PIL.Image.open(path).text` or `exiftool`.
+
+Hiding the printed line therefore does not drop the attribution — but if you also
+strip the metadata, it does. The licence requires attributing a Produced Work that
+is distributed publicly.
 
 The pin is drawn as a vector path, not as an image file, for two reasons. It
 takes the theme's colour, so it works on the black of `noir` and on the cream of

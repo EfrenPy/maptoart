@@ -856,6 +856,8 @@ def _save_output(
     height: float,
     dpi: int,
     *,
+    city: str = "",
+    country: str = "",
     status_reporter: StatusReporter | None = None,
 ) -> None:
     """Save figure to *output_file* atomically."""
@@ -873,6 +875,15 @@ def _save_output(
         facecolor=theme["bg"],
         pad_inches=0,
     )
+
+    # La atribucion de OpenStreetMap viaja DENTRO del fichero.
+    #
+    # La ODbL obliga a atribuir en una obra distribuida publicamente. Desde el
+    # 2026-09-07 la linea ya no se imprime en la cara del poster final -queda
+    # limpia para enmarcar-, asi que tiene que estar en otro sitio que acompane
+    # al fichero. Los metadatos lo hacen: sobreviven al reenvio, a subirlo a otro
+    # sitio y a que se pierda la pagina de producto de vista.
+    save_kwargs["metadata"] = _attribution_metadata(fmt, city, country)
 
     if fmt == "png":
         save_kwargs["dpi"] = dpi
@@ -918,6 +929,39 @@ def _save_output(
         f"✓ Done! Poster saved as {output_file}",
         output_file=output_file,
     )
+
+
+_OSM_ATTRIBUTION = (
+    "Map data \u00a9 OpenStreetMap contributors, licensed under the Open Database "
+    "License (ODbL). https://www.openstreetmap.org/copyright"
+)
+
+
+def _attribution_metadata(fmt: str, city: str | None, country: str | None) -> dict[str, str]:
+    """Metadatos con la atribucion, en las claves que entiende cada formato.
+
+    matplotlib escribe estos pares como trozos tEXt en PNG, como diccionario Info
+    en PDF y como elementos de cabecera en SVG, asi que las claves no son
+    intercambiables entre formatos.
+    """
+    title = ", ".join(part for part in (city or "", country or "") if part)
+    if fmt == "pdf":
+        return {
+            "Title": title,
+            "Subject": _OSM_ATTRIBUTION,
+            "Creator": "MapToArt",
+            "Keywords": "OpenStreetMap, ODbL, map poster",
+        }
+    if fmt == "svg":
+        return {"Title": title, "Description": _OSM_ATTRIBUTION, "Creator": "MapToArt"}
+    # PNG: claves tEXt libres; Copyright y Source son las que leen los visores.
+    return {
+        "Title": title,
+        "Author": "MapToArt",
+        "Copyright": _OSM_ATTRIBUTION,
+        "Source": "https://www.openstreetmap.org/copyright",
+        "Software": "MapToArt",
+    }
 
 
 def create_poster(
@@ -1129,6 +1173,8 @@ def create_poster(
             width,
             height,
             dpi,
+            city=display_city,
+            country=display_country,
             status_reporter=status_reporter,
         )
     finally:
